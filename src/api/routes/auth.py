@@ -4,6 +4,7 @@ src/api/routes/auth.py
 Authentication routes: signup, login, logout, delete account.
 """
 from __future__ import annotations
+from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr
 
@@ -52,20 +53,19 @@ def logout(user: dict = Depends(get_current_user)):
 )
 def delete_my_account(
     user: dict = Depends(get_current_user),
-    credentials=Depends(lambda: None),
 ):
     """One-tap instant account deletion."""
-    from fastapi import Request
-    # We need the raw token for admin delete
-    from fastapi.security import HTTPBearer
-    return {"message": "Use Authorization header with Bearer token for account deletion."}
+    return delete_account("", user_id=user["user_id"])
 
 
 @router.delete("/delete-account/confirm", summary="Confirm and execute account deletion")
-async def delete_account_confirm(request: dict, user: dict = Depends(get_current_user)):
+def delete_account_confirm(
+    body: Optional[dict] = None,
+    user: dict = Depends(get_current_user),
+):
     """
     Final account deletion step.
-    Pass {'confirm': true} in body to execute the permanent deletion.
+    Permanently deletes all user data and credentials.
     """
-    return {"deleted": True, "user_id": user["user_id"], "message": "Account permanently deleted."}
+    return delete_account("", user_id=user["user_id"])
 
