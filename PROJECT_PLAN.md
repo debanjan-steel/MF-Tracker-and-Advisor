@@ -354,6 +354,7 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 
 | Date | Phase | Task | Summary of Work Completed |
 | :--- | :--- | :--- | :--- |
+| **2026-10-31** | Phase 5 | UX Enhancement | Added **Retirement Mode (No Fixed Goal)** to Planner (`PlannerTab.tsx`): 1-tap toggle calculating years to retirement (age 60 - current age) and corpus target based on 25× annual spend rule (4% safe withdrawal rule). Fixed API response field mappings for Allocation Advice tranches and Goal Planner glide path. |
 | **2026-10-31** | Phase 6 | Task 6.1 - 6.3 | Full cloud production deployment complete! Frontend deployed on Vercel (`https://mf-tracker-and-advisor.vercel.app/`), Backend deployed on Render (`https://mf-tracker-and-advisor.onrender.com/`), and Auth & DB active on Supabase. Verified end-to-end user signup, JWT auth, and protected API endpoints. |
 | **2026-10-31** | Phase 1 | Task 1.1 - 1.5 | Initialized Python 3.13 `.venv`, configured `.vscode/settings.json`, added `.python-version`, `.gitignore`, activation scripts (`activate.ps1`, `activate.bat`), and established `PROJECT_PLAN.md`. |
 | **2026-10-31** | Phase 2 | Architecture | Finalized Dual-Source Data Strategy: **Primary (MFAPI.in)** + **Secondary / Verification (AMFI Official Portal)** with auto-failover and NAV verification. |

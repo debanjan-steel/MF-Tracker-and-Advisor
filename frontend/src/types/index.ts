@@ -26,14 +26,37 @@ export interface MacroDanger {
   flags: string[]
 }
 
+export interface Tranche {
+  label: string
+  amount: number
+  pct: number
+}
+
+export interface HeroDeploymentPlan {
+  total_capital: number
+  equity_amount: number
+  liquid_amount: number
+  tranches: Tranche[]
+  category_split?: Record<string, number>
+  note?: string
+}
+
 export interface AllocationAdvice {
   posture: 'AGGRESSIVE' | 'GROWTH' | 'BALANCED' | 'DEFENSIVE' | 'CAPITAL_SAFE'
   equity_pct: number
   liquid_pct: number
-  monthly_sip: number
-  lumpsum_now: number
-  stagger_months: number
-  message: string
+  sip_multiplier?: number
+  lumpsum_allowed?: boolean
+  opportunity_score?: number
+  action_items?: string[]
+  category_weights?: Record<string, number>
+  hero_deployment_plan?: HeroDeploymentPlan | null
+  emoji?: string
+  description?: string
+  monthly_sip?: number
+  lumpsum_now?: number
+  stagger_months?: number
+  message?: string
 }
 
 export interface Scorecard {
@@ -89,12 +112,27 @@ export interface Holding {
   dud_severity: string
 }
 
+export interface GlidePathStep {
+  year: number
+  equity_pct: number
+  debt_pct?: number
+  liquid_pct?: number
+}
+
 export interface GoalPlan {
-  target_amount: number
-  years: number
-  required_monthly_sip: number
-  projected_corpus: number
-  glide_path: Array<{ year: number; equity_pct: number; debt_pct: number }>
+  target_amount?: number
+  target_corpus?: number
+  years?: number
+  years_remaining?: number
+  required_monthly_sip?: number
+  monthly_sip_required?: number
+  projected_corpus?: number
+  goal_name?: string
+  equity_pct?: number
+  glide_path?: GlidePathStep[]
+  glide_path_schedule?: GlidePathStep[]
+  de_risk_action?: string
+  milestone_alerts?: string[]
 }
 
 export interface SIPRecommendation {
