@@ -1,0 +1,59 @@
+# ============================================================
+#  Indian Mutual Funds Analytics & Market Timing Platform
+#  Requirements — Python 3.13
+# ============================================================
+
+# --- Data Ingestion & HTTP ---
+requests==2.32.3          # HTTP client for MFAPI & AMFI calls
+httpx==0.27.2             # Async HTTP client (FastAPI background tasks)
+tenacity==8.5.0           # Retry logic with exponential backoff
+
+# --- Data Processing ---
+pandas==2.2.3             # Core data manipulation (NAV time series, analytics)
+numpy==2.1.3              # Numerical operations (rolling returns, drawdowns)
+
+# --- Financial & Market Data ---
+yfinance==0.2.44          # Macro market data: Crude, VIX, US 10Y Yield, DXY, Gold
+
+# --- CAS PDF Ingestion ---
+casparser==1.4.1          # CAMS/KFintech Consolidated Account Statement PDF parser
+
+# --- Database ---
+sqlalchemy==2.0.36        # ORM for SQLite local cache
+aiosqlite==0.20.0         # Async SQLite driver
+supabase==2.9.1           # Supabase cloud DB + Auth (RLS, Google OAuth)
+
+# --- Machine Learning & Statistics ---
+scikit-learn==1.5.2       # ML models: Ridge, RandomForest, LightGBM pipelines
+lightgbm==4.5.0           # Gradient boosting for walk-forward NAV prediction
+scipy==1.14.1             # Statistical distributions, t-tests
+
+# --- Data Validation ---
+pydantic==2.9.2           # Data validation for API request/response models
+pydantic-settings==2.6.1  # Settings management via .env
+email-validator>=2.2.0    # Email validation for Pydantic EmailStr
+
+# --- API Backend ---
+fastapi==0.115.4          # REST API framework
+uvicorn[standard]==0.32.0 # ASGI server for FastAPI
+python-multipart>=0.0.17  # Form data & file uploads for CAS parser
+
+# --- Export & Reporting ---
+openpyxl==3.1.5           # Excel export for ITR Tax Pack generator
+reportlab==4.2.5          # PDF export for ITR Tax Pack generator
+
+# --- Notifications ---
+requests                   # WhatsApp via Twilio/WhatsApp Business API (shared with above)
+
+# --- Scheduling ---
+apscheduler==3.10.4       # Scheduled tasks (nightly sync fallback for local dev)
+
+# --- Utilities ---
+python-dotenv==1.0.1      # Load .env variables
+python-dateutil==2.9.0    # Date parsing utilities
+pytz==2024.2              # Timezone handling (IST, UTC)
+
+# --- Development & Testing ---
+pytest==8.3.3             # Test runner
+pytest-asyncio==0.24.0    # Async test support for FastAPI endpoints
+httpx                      # Shared with above — used in test client

@@ -1,0 +1,26 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.log
+
+# Environment variables
+.env
+frontend/.env
+*.local
+
+# Node & Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+dist/
+
+# SQLite databases (local)
+data/*.db
+!data/.gitkeep
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/

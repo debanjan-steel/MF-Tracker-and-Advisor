@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-bg: #0f172a;
+    --color-surface: #1e293b;
+    --color-surface2: #334155;
+    --color-border: #475569;
+    --color-text: #f1f5f9;
+    --color-muted: #94a3b8;
+    --color-accent: #6366f1;
+    --color-accent-hover: #818cf8;
+    --color-green: #22c55e;
+    --color-red: #ef4444;
+    --color-yellow: #f59e0b;
+    --color-orange: #f97316;
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+}
+
+@layer components {
+  .card {
+    @apply bg-slate-800 rounded-2xl p-4 border border-slate-700;
+  }
+
+  .card-sm {
+    @apply bg-slate-800 rounded-xl p-3 border border-slate-700;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 px-5 rounded-xl
+           transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none;
+  }
+
+  .btn-secondary {
+    @apply bg-slate-700 hover:bg-slate-600 text-slate-200 font-medium py-3 px-5 rounded-xl
+           transition-all duration-200 active:scale-95;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 hover:bg-red-500 text-white font-semibold py-3 px-5 rounded-xl
+           transition-all duration-200 active:scale-95;
+  }
+
+  .input {
+    @apply w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl px-4 py-3
+           placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500
+           focus:border-transparent transition-all;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-slate-400 mb-1;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full;
+  }
+
+  .tab-btn {
+    @apply flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-xs font-medium
+           transition-colors duration-150;
+  }
+
+  .section-title {
+    @apply text-base font-bold text-slate-200 mb-3;
+  }
+
+  .divider {
+    @apply border-t border-slate-700 my-4;
+  }
+}

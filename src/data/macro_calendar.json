@@ -1,0 +1,143 @@
+[
+  {
+    "event": "Union Budget",
+    "date": "2027-02-01",
+    "category": "fiscal_policy",
+    "historical_volatility_impact": "high",
+    "notes": "Annual Indian Union Budget. Markets typically volatile ±5% around announcement."
+  },
+  {
+    "event": "Union Budget",
+    "date": "2026-02-01",
+    "category": "fiscal_policy",
+    "historical_volatility_impact": "high",
+    "notes": "Annual Indian Union Budget."
+  },
+  {
+    "event": "RBI MPC Meeting",
+    "date": "2026-12-04",
+    "category": "monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "RBI Monetary Policy Committee — interest rate decision."
+  },
+  {
+    "event": "RBI MPC Meeting",
+    "date": "2027-02-05",
+    "category": "monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "RBI Monetary Policy Committee — interest rate decision."
+  },
+  {
+    "event": "RBI MPC Meeting",
+    "date": "2027-04-07",
+    "category": "monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "RBI Monetary Policy Committee — interest rate decision."
+  },
+  {
+    "event": "RBI MPC Meeting",
+    "date": "2027-06-04",
+    "category": "monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "RBI Monetary Policy Committee — interest rate decision."
+  },
+  {
+    "event": "RBI MPC Meeting",
+    "date": "2027-08-05",
+    "category": "monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "RBI Monetary Policy Committee — interest rate decision."
+  },
+  {
+    "event": "RBI MPC Meeting",
+    "date": "2027-10-07",
+    "category": "monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "RBI Monetary Policy Committee — interest rate decision."
+  },
+  {
+    "event": "US FOMC Meeting",
+    "date": "2026-11-07",
+    "category": "us_monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "US Federal Reserve interest rate decision. EM markets react to rate signals."
+  },
+  {
+    "event": "US FOMC Meeting",
+    "date": "2026-12-17",
+    "category": "us_monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "US Federal Reserve December meeting — typically high-impact."
+  },
+  {
+    "event": "US FOMC Meeting",
+    "date": "2027-01-29",
+    "category": "us_monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "US Federal Reserve meeting."
+  },
+  {
+    "event": "US FOMC Meeting",
+    "date": "2027-03-19",
+    "category": "us_monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "US Federal Reserve meeting."
+  },
+  {
+    "event": "US FOMC Meeting",
+    "date": "2027-05-07",
+    "category": "us_monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "US Federal Reserve meeting."
+  },
+  {
+    "event": "US FOMC Meeting",
+    "date": "2027-06-17",
+    "category": "us_monetary_policy",
+    "historical_volatility_impact": "medium",
+    "notes": "US Federal Reserve meeting."
+  },
+  {
+    "event": "India Q2 GDP Data",
+    "date": "2026-11-28",
+    "category": "economic_data",
+    "historical_volatility_impact": "low",
+    "notes": "India Q2 FY27 GDP growth data release."
+  },
+  {
+    "event": "India Q3 GDP Data",
+    "date": "2027-02-28",
+    "category": "economic_data",
+    "historical_volatility_impact": "low",
+    "notes": "India Q3 FY27 GDP growth data release."
+  },
+  {
+    "event": "India General Election (Next Scheduled)",
+    "date": "2029-04-01",
+    "category": "political",
+    "historical_volatility_impact": "high",
+    "notes": "Indian Lok Sabha General Elections. Typically causes 10-15% pre-election volatility."
+  },
+  {
+    "event": "Maharashtra State Elections",
+    "date": "2024-11-20",
+    "category": "political",
+    "historical_volatility_impact": "low",
+    "notes": "Maharashtra state assembly elections — regional impact."
+  },
+  {
+    "event": "Nifty F&O Expiry (Monthly)",
+    "date": "2026-11-27",
+    "category": "derivatives",
+    "historical_volatility_impact": "low",
+    "notes": "Monthly F&O expiry — last Thursday. Intraday volatility spike."
+  },
+  {
+    "event": "Nifty F&O Expiry (Monthly)",
+    "date": "2026-12-31",
+    "category": "derivatives",
+    "historical_volatility_impact": "low",
+    "notes": "December expiry — also year-end window dressing."
+  }
+]
+
