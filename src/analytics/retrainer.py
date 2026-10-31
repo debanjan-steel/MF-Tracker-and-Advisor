@@ -167,3 +167,4 @@ def retrain_weights(min_samples: int = 10) -> CalibrationReport:
         new_weights=new_weights,
         improvement_note=note,
     )
+
