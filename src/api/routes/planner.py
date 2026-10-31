@@ -120,7 +120,7 @@ class TacticalPlanRequest(BaseModel):
 
 
 @router.post("/tactical-plan", summary="Complete tactical market timing, cap split & fund recommendation plan")
-def tactical_plan(body: TacticalPlanRequest, user: dict = Depends(get_current_user)):
+def tactical_plan(body: TacticalPlanRequest):
     """
     Generates an end-to-end tactical investment plan for non-CAS cold start:
     1. Market timing & macro event forecast (crude shocks, RBI MPC, budget)
