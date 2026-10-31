@@ -312,12 +312,13 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 
 #### Phase 5: Web Dashboard & Visualizer (Frontend)
 - [x] ✅ **Task 5.1**: Scaffold Vite + React + TypeScript + Tailwind CSS PWA (`frontend/`).
-- [x] ✅ **Task 5.2**: **Hero Section: Dynamic Capital Deployment Planner Card** (`frontend/src/pages/PlannerTab.tsx`):
-  - Capital input field & monthly SIP budget.
+- [x] ✅ **Task 5.2**: **Hero Section: Progressive Financial Year Capital Deployment & Investment Planner** (`frontend/src/pages/PlannerTab.tsx`):
+  - **Step 1 (Core Capital & FY Strategy)**: Primary input asks only for Total Capital to invest, dynamically calculating remaining months in current Indian Financial Year (till March 31) and selecting optimal strategy (One-time Lump sum vs. Systematic Monthly Tranches vs. Spaced 2-3 Month Gap Tranches).
+  - **Step 2 (Optional Monthly Budget Limit)**: 1-click toggle to set monthly investment limit; computes whether capital fits into current FY or spills over into the next FY, with full dual-FY tranche breakdown and automated Liquid/Arbitrage yield parking recommendation.
+  - **Step 3 (Optional Long-Term Goal / Retirement)**: 1-click toggle to set target corpus & horizon or 25× annual spend retirement mode with systematic auto de-risking glide path.
   - Live strategic verdict posture badge (AGGRESSIVE / GROWTH / BALANCED / DEFENSIVE / CAPITAL_SAFE).
   - **Embedded Optimal SIP Execution Date**: Displays backtested best days (1st, 7th, 15th) directly inside plan card.
   - Interactive Tranche Schedule & Rupee Breakdown (Immediate equity deployment vs. parked Liquid/Arbitrage yield reserve).
-  - Instant real-time recalculation on capital changes.
 - [x] ✅ **Task 5.3**: Interactive NAV & Benchmark Comparison Charts with 200-day EMA overlay via Recharts (`frontend/src/pages/ExplorerTab.tsx`).
 - [x] ✅ **Task 5.4**: Visual Market Timing Gauge (Speedometer Arc SVG + Multi-indicator display) (`frontend/src/components/TimingGauge.tsx`).
 - [x] ✅ **Task 5.5**: Rolling Returns & Drawdown Distribution Charts via Recharts.
@@ -354,6 +355,7 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 
 | Date | Phase | Task | Summary of Work Completed |
 | :--- | :--- | :--- | :--- |
+| **2026-10-31** | Phase 5 | UX Redesign | Redesigned **Investment Planner** into a 3-step progressive workflow (`PlannerTab.tsx`): 1) Pure capital input generating strategy before current Financial Year ends (March 31) with Lump sum vs Monthly SIP vs 2-3 month gap tranches; 2) Optional Monthly Budget Limit with FY capacity check, spillover rollover calculation into next FY, and liquid parking yield advice; 3) Optional Long-Term Goal / Retirement with systematic glide-path. |
 | **2026-10-31** | Phase 5 | UX Enhancement | Added **Retirement Mode (No Fixed Goal)** to Planner (`PlannerTab.tsx`): 1-tap toggle calculating years to retirement (age 60 - current age) and corpus target based on 25× annual spend rule (4% safe withdrawal rule). Fixed API response field mappings for Allocation Advice tranches and Goal Planner glide path. |
 | **2026-10-31** | Phase 6 | Task 6.1 - 6.3 | Full cloud production deployment complete! Frontend deployed on Vercel (`https://mf-tracker-and-advisor.vercel.app/`), Backend deployed on Render (`https://mf-tracker-and-advisor.onrender.com/`), and Auth & DB active on Supabase. Verified end-to-end user signup, JWT auth, and protected API endpoints. |
 | **2026-10-31** | Phase 1 | Task 1.1 - 1.5 | Initialized Python 3.13 `.venv`, configured `.vscode/settings.json`, added `.python-version`, `.gitignore`, activation scripts (`activate.ps1`, `activate.bat`), and established `PROJECT_PLAN.md`. |
