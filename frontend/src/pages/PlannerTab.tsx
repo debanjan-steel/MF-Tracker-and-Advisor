@@ -1,34 +1,19 @@
 import { useEffect, useState, useMemo } from 'react'
 import { plannerAPI, analyticsAPI } from '../lib/api'
 import { TacticalPlan, TimingScore, SIPRecommendation, GoalPlan } from '../types'
-import { fmtINR, postureColor } from '../lib/utils'
-import TimingGauge from '../components/TimingGauge'
-import StressTestCard from '../components/StressTestCard'
+import { fmtINR } from '../lib/utils'
 import {
   TrendingUp,
   Target,
   Clock,
   Coins,
   AlertCircle,
-  ShieldCheck,
-  Sparkles,
   Zap,
-  CheckCircle2,
   Calendar,
   Flame,
-  Snowflake,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
-
-const STRESS_SCENARIOS = [
-  { key: 'covid_crash', label: 'COVID Crash (2020)' },
-  { key: 'gfc_2008', label: 'GFC (2008)' },
-  { key: 'crude_spike', label: 'Crude Oil Spike' },
-  { key: 'fed_hike_cycle', label: 'Fed Rate Hike Cycle' },
-  { key: 'rupee_collapse', label: 'Rupee Collapse' },
-  { key: 'india_election', label: 'India Election Shock' },
-]
 
 function getFYSchedule(date = new Date()) {
   const currentYear = date.getFullYear()
@@ -303,8 +288,6 @@ export default function PlannerTab() {
   const [timing, setTiming] = useState<TimingScore | null>(null)
   const [, setSipRec] = useState<SIPRecommendation | null>(null)
   const [goal, setGoal] = useState<GoalPlan | null>(null)
-  const [stressScenario, setStressScenario] = useState('covid_crash')
-  const [stressResult, setStressResult] = useState<any>(null)
 
   const [loading, setLoading] = useState(false)
   const [showGlidePath, setShowGlidePath] = useState(false)
@@ -334,7 +317,6 @@ export default function PlannerTab() {
       const calls: Promise<any>[] = [
         plannerAPI.tacticalPlan(capNum, hasMonthlyBudget ? Number(monthlyLimit) : undefined),
         analyticsAPI.timingScore(122640),
-        analyticsAPI.stressTest(stressScenario, capNum),
       ]
 
       if (hasGoal) {
@@ -352,10 +334,9 @@ export default function PlannerTab() {
         setTacticalPlan(results[0].value.data)
       }
       if (results[1].status === 'fulfilled') setTiming(results[1].value.data)
-      if (results[2].status === 'fulfilled') setStressResult(results[2].value.data)
 
-      if (hasGoal && results[3] && results[3].status === 'fulfilled') {
-        const d = results[3].value.data
+      if (hasGoal && results[2] && results[2].status === 'fulfilled') {
+        const d = results[2].value.data
         setGoal({
           ...d,
           target_amount: d.target_amount ?? Number(effectiveGoalTarget),
@@ -580,48 +561,6 @@ export default function PlannerTab() {
         {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
       </div>
 
-      {/* ── TACTICAL VERDICT & MARKET POSTURE ───────────────────────────── */}
-      {tacticalPlan && (
-        <div className="card border-l-4 border-l-indigo-500 bg-gradient-to-br from-slate-900 to-indigo-950/20">
-          <div className="flex items-start justify-between mb-2">
-            <div>
-              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Market Timing Verdict
-              </span>
-              <h2 className="text-lg font-bold text-white mt-0.5">
-                Tactical Market Posture: {tacticalPlan.posture}
-              </h2>
-            </div>
-            <span className={`badge text-xs font-bold px-3 py-1 rounded-xl ${postureColor(tacticalPlan.posture)}`}>
-              {tacticalPlan.posture}
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
-            {tacticalPlan.forecast_summary}
-          </p>
-
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex flex-col items-center">
-              <p className="text-[11px] text-slate-400 mb-1 font-semibold">Market Timing Gauge</p>
-              {timing && <TimingGauge score={timing.score} signal={timing.signal} />}
-            </div>
-            <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
-              <div>
-                <p className="text-[11px] text-slate-400 font-semibold mb-1">Macro Risk Exposure</p>
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-amber-400">{tacticalPlan.danger_score.toFixed(0)}%</span>
-                  <span className="text-xs text-slate-400">Downturn Risk</span>
-                </div>
-              </div>
-              <div className="mt-2 text-[10px] text-slate-400 leading-tight">
-                Crude volatility & upcoming RBI/Budget catalysts factored in.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ── CATEGORY CAP SPLIT & VALUATION THERMOMETER ─────────────────── */}
       {tacticalPlan && (
         <div className="card">
@@ -825,44 +764,6 @@ export default function PlannerTab() {
         </div>
       )}
 
-      {/* ── STRATEGY COMPARISON: WHY THIS OUTPERFORMS BLIND SIP / LUMP SUM ── */}
-      <div className="card">
-        <p className="section-title flex items-center gap-2">
-          <ShieldCheck className="w-4 h-4 text-emerald-400" /> Strategy Comparison
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
-          <div className="p-3 bg-slate-900 rounded-xl border border-red-900/40">
-            <p className="font-bold text-red-400 mb-1">❌ Blind Lump Sum</p>
-            <p className="text-slate-400 mb-2">Deploying ₹1,00,000 all at once today.</p>
-            <ul className="text-slate-500 space-y-1 text-[11px]">
-              <li>• Buys overheated small-caps at peak valuation</li>
-              <li>• Suffers severe drawdowns if crude shocks trigger</li>
-              <li>• Zero dry powder for dip opportunities</li>
-            </ul>
-          </div>
-
-          <div className="p-3 bg-slate-900 rounded-xl border border-yellow-900/40">
-            <p className="font-bold text-yellow-400 mb-1">⚠️ Mechanical Equal SIP</p>
-            <p className="text-slate-400 mb-2">Blind ₹20,000/mo without timing.</p>
-            <ul className="text-slate-500 space-y-1 text-[11px]">
-              <li>• Leaves ₹80,000 idle in 3% bank savings account</li>
-              <li>• No tactical overweight on cheap categories</li>
-              <li>• Ignores predictable macro dip triggers</li>
-            </ul>
-          </div>
-
-          <div className="p-3 bg-emerald-950/30 rounded-xl border border-emerald-600/80 shadow-sm">
-            <p className="font-bold text-emerald-400 mb-1">✅ Antigravity Tactical Plan</p>
-            <p className="text-slate-300 mb-2">Market timing + high-conviction funds.</p>
-            <ul className="text-slate-200 space-y-1 text-[11px]">
-              <li>• Earns ~6.8% risk-free yield on idle liquid stash</li>
-              <li>• Captures Nippon India Small Cap at a 4–6% discount</li>
-              <li>• 100% fully deployed before March 31 with zero tax lag</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
       {/* ── LONG-TERM GOAL ROADMAP (OPTIONAL STEP 3) ───────────────────── */}
       {hasGoal && goal && (
         <div className="card border-l-4 border-l-amber-500">
@@ -921,34 +822,6 @@ export default function PlannerTab() {
           )}
         </div>
       )}
-
-      {/* ── HISTORICAL STRESS TEST SIMULATOR ───────────────────────────── */}
-      <div className="card">
-        <p className="section-title">Historical Shock Simulator</p>
-        <p className="text-xs text-slate-400 mb-3">
-          Simulate how your ₹{fmtINR(Number(capital) || 100000)} portfolio behaves under past market crashes:
-        </p>
-        <select
-          className="input mb-3"
-          value={stressScenario}
-          onChange={(e) => setStressScenario(e.target.value)}
-        >
-          {STRESS_SCENARIOS.map((s) => (
-            <option key={s.key} value={s.key}>{s.label}</option>
-          ))}
-        </select>
-        <button
-          onClick={() =>
-            analyticsAPI
-              .stressTest(stressScenario, Number(capital) || 100000)
-              .then((r) => setStressResult(r.data))
-          }
-          className="btn-secondary w-full mb-3"
-        >
-          Run Shock Simulation
-        </button>
-        {stressResult && <StressTestCard result={stressResult} />}
-      </div>
     </div>
   )
 }
