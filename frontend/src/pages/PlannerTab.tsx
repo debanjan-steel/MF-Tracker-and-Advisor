@@ -1,7 +1,8 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { plannerAPI, analyticsAPI } from '../lib/api'
 import { TacticalPlan, TimingScore, SIPRecommendation, GoalPlan } from '../types'
 import { fmtINR } from '../lib/utils'
+import { useAppStore } from '../store/appStore'
 import {
   TrendingUp,
   Target,
@@ -268,27 +269,35 @@ function generateTacticalPlanLocal(
 }
 
 export default function PlannerTab() {
-  // ── Step 1: Total Capital ─────────────────────────
-  const [capital, setCapital] = useState<string>('100000')
+  // ── Zustand: Persistent Planner State (survives tab switches) ──
+  const capital = useAppStore((s) => s.plannerCapital)
+  const setCapital = useAppStore((s) => s.setPlannerCapital)
 
-  // ── Step 2: Monthly Budget Limit Option ───────────
-  const [hasMonthlyBudget, setHasMonthlyBudget] = useState(false)
-  const [monthlyLimit, setMonthlyLimit] = useState<string>('30000')
+  const hasMonthlyBudget = useAppStore((s) => s.plannerHasMonthlyBudget)
+  const setHasMonthlyBudget = useAppStore((s) => s.setPlannerHasMonthlyBudget)
+  const monthlyLimit = useAppStore((s) => s.plannerMonthlyLimit)
+  const setMonthlyLimit = useAppStore((s) => s.setPlannerMonthlyLimit)
 
-  // ── Step 3: Long-Term Goal / Horizon Option ───────
-  const [hasGoal, setHasGoal] = useState(false)
-  const [goalMode, setGoalMode] = useState<'target' | 'retirement'>('target')
-  const [goalTarget, setGoalTarget] = useState<string>('10000000')
-  const [goalYears, setGoalYears] = useState<string>('10')
-  const [currentAge, setCurrentAge] = useState<string>('30')
+  const hasGoal = useAppStore((s) => s.plannerHasGoal)
+  const setHasGoal = useAppStore((s) => s.setPlannerHasGoal)
+  const goalMode = useAppStore((s) => s.plannerGoalMode)
+  const setGoalMode = useAppStore((s) => s.setPlannerGoalMode)
+  const goalTarget = useAppStore((s) => s.plannerGoalTarget)
+  const setGoalTarget = useAppStore((s) => s.setPlannerGoalTarget)
+  const goalYears = useAppStore((s) => s.plannerGoalYears)
+  const setGoalYears = useAppStore((s) => s.setPlannerGoalYears)
+  const currentAge = useAppStore((s) => s.plannerCurrentAge)
+  const setCurrentAge = useAppStore((s) => s.setPlannerCurrentAge)
 
-  // ── Tactical Plan & Analytics States ──────────────
-  // Initialize with local plan immediately — guarantees 0ms load and never empty
-  const [tacticalPlan, setTacticalPlan] = useState<TacticalPlan>(() => generateTacticalPlanLocal(100000))
-  const [timing, setTiming] = useState<TimingScore | null>(null)
+  const tacticalPlan = useAppStore((s) => s.plannerTacticalPlan)
+  const setTacticalPlan = useAppStore((s) => s.setPlannerTacticalPlan)
+  const timing = useAppStore((s) => s.plannerTiming)
+  const setTiming = useAppStore((s) => s.setPlannerTiming)
+  const goal = useAppStore((s) => s.plannerGoal)
+  const setGoal = useAppStore((s) => s.setPlannerGoal)
+
+  // ── Local UI state only (no need to persist these) ─────────────
   const [, setSipRec] = useState<SIPRecommendation | null>(null)
-  const [goal, setGoal] = useState<GoalPlan | null>(null)
-
   const [loading, setLoading] = useState(false)
   const [showGlidePath, setShowGlidePath] = useState(false)
   const [showRoadmap, setShowRoadmap] = useState(true)
@@ -305,12 +314,17 @@ export default function PlannerTab() {
   const effectiveGoalYears = goalMode === 'retirement' ? String(retirementYears) : goalYears
 
   const loadPlan = async () => {
-    const capNum = Number(capital) || 100000
+    const capNum = Number(capital)
+    if (!capital || capNum <= 0) {
+      setError('Please enter an investment amount greater than ₹0.')
+      return
+    }
+    setError(null)
+
     // Immediately calculate and show updated plan on screen (0ms latency)
-    setTacticalPlan(generateTacticalPlanLocal(capNum, tacticalPlan.posture, timing?.score || 62, tacticalPlan.danger_score))
+    setTacticalPlan(generateTacticalPlanLocal(capNum, tacticalPlan?.posture ?? 'GROWTH', timing?.score ?? 62, tacticalPlan?.danger_score ?? 28))
 
     setLoading(true)
-    setError(null)
     const mBudgetNum = hasMonthlyBudget ? Number(monthlyLimit) : Math.round(capNum / fy.monthsRemainingInFY)
 
     try {
@@ -353,10 +367,6 @@ export default function PlannerTab() {
     }
   }
 
-  useEffect(() => {
-    loadPlan()
-  }, [])
-
   return (
     <div className="space-y-4 pb-12">
       {/* ── STEP 1: Total Capital Input Card ───────────────────────────── */}
@@ -388,8 +398,11 @@ export default function PlannerTab() {
             className="input text-xl font-bold tracking-wide py-2.5 text-white"
             type="number"
             value={capital}
-            onChange={(e) => setCapital(e.target.value)}
-            placeholder="1,00,000"
+            onChange={(e) => {
+              setCapital(e.target.value)
+              if (error) setError(null)
+            }}
+            placeholder="0"
           />
 
           {/* Quick presets */}
@@ -413,7 +426,7 @@ export default function PlannerTab() {
         {/* Optional Customizer Toggles */}
         <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-800/80 mb-4">
           <button
-            onClick={() => setHasMonthlyBudget((p) => !p)}
+            onClick={() => setHasMonthlyBudget(!hasMonthlyBudget)}
             className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
               hasMonthlyBudget
                 ? 'bg-indigo-900/40 border-indigo-500 text-indigo-300 font-bold'
@@ -425,7 +438,7 @@ export default function PlannerTab() {
           </button>
 
           <button
-            onClick={() => setHasGoal((p) => !p)}
+            onClick={() => setHasGoal(!hasGoal)}
             className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
               hasGoal
                 ? 'bg-amber-900/40 border-amber-500 text-amber-300 font-bold'
@@ -560,6 +573,21 @@ export default function PlannerTab() {
         </button>
         {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
       </div>
+
+      {/* ── Empty State Prompt (When no plan has been generated yet) ────── */}
+      {!tacticalPlan && (
+        <div className="card text-center py-10 border-dashed border-slate-800">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-950/60 border border-indigo-800/80 flex items-center justify-center mx-auto mb-3 shadow-md shadow-indigo-950/40">
+            <TrendingUp className="w-6 h-6 text-indigo-400" />
+          </div>
+          <h3 className="text-sm font-semibold text-slate-200 mb-1">Ready to Build Your Tactical Plan</h3>
+          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+            Enter your total investment amount above and click{' '}
+            <span className="text-indigo-400 font-semibold">Generate Tactical Investment Plan</span> to receive an
+            optimal cap split, high-conviction funds, and dip-timed execution roadmap before the financial year ends.
+          </p>
+        </div>
+      )}
 
       {/* ── CATEGORY CAP SPLIT & VALUATION THERMOMETER ─────────────────── */}
       {tacticalPlan && (
