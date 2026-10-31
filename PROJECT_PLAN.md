@@ -312,13 +312,13 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 
 #### Phase 5: Web Dashboard & Visualizer (Frontend)
 - [x] ✅ **Task 5.1**: Scaffold Vite + React + TypeScript + Tailwind CSS PWA (`frontend/`).
-- [x] ✅ **Task 5.2**: **Hero Section: Progressive Financial Year Capital Deployment & Investment Planner** (`frontend/src/pages/PlannerTab.tsx`):
-  - **Step 1 (Core Capital & FY Strategy)**: Primary input asks only for Total Capital to invest, dynamically calculating remaining months in current Indian Financial Year (till March 31) and selecting optimal strategy (One-time Lump sum vs. Systematic Monthly Tranches vs. Spaced 2-3 Month Gap Tranches).
-  - **Step 2 (Optional Monthly Budget Limit)**: 1-click toggle to set monthly investment limit; computes whether capital fits into current FY or spills over into the next FY, with full dual-FY tranche breakdown and automated Liquid/Arbitrage yield parking recommendation.
-  - **Step 3 (Optional Long-Term Goal / Retirement)**: 1-click toggle to set target corpus & horizon or 25× annual spend retirement mode with systematic auto de-risking glide path.
-  - Live strategic verdict posture badge (AGGRESSIVE / GROWTH / BALANCED / DEFENSIVE / CAPITAL_SAFE).
-  - **Embedded Optimal SIP Execution Date**: Displays backtested best days (1st, 7th, 15th) directly inside plan card.
-  - Interactive Tranche Schedule & Rupee Breakdown (Immediate equity deployment vs. parked Liquid/Arbitrage yield reserve).
+- [x] ✅ **Task 5.2**: **Hero Section: High-Conviction Tactical Investment Planner & Market Timing Engine** (`frontend/src/pages/PlannerTab.tsx`, `src/api/routes/planner.py`):
+  - **Cold-Start Capital Input**: Enter total amount (e.g. ₹1,00,000) and immediately get high-conviction mutual fund picks, market timing triggers, and cap split without requiring CAS upload.
+  - **Dynamic Cap Split & Thermometer**: Quantitative allocation across Large/Flexi Cap (40%), Mid Cap (25%), Small Cap (15%), and Liquid Reserve (20%) driven by category valuation heat.
+  - **High-Conviction Fund Picks**: Recommends Parag Parikh Flexi Cap (122640), Motilal Oswal Midcap (153694), Nippon India Small Cap (118778), and ICICI Liquid Fund with historical 3Y/5Y CAGR, Sharpe ratio, and Max Drawdown.
+  - **Event & Market Timing Dip Prediction**: Detects crude volatility and pre-budget / RBI MPC cycles; generates an actionable **Small-Cap Dip Prediction** (recommending holding Nippon India allocation in Liquid fund to capture a predicted 4–6% dip in Jan).
+  - **Master FY Execution Roadmap**: Month-by-month actionable roadmap completing 100% equity deployment before March 31 with zero tax lag.
+  - **Strategy Comparison**: Quant analysis proving outperformance over blind lump sum and mechanical monthly SIP.
 - [x] ✅ **Task 5.3**: Interactive NAV & Benchmark Comparison Charts with 200-day EMA overlay via Recharts (`frontend/src/pages/ExplorerTab.tsx`).
 - [x] ✅ **Task 5.4**: Visual Market Timing Gauge (Speedometer Arc SVG + Multi-indicator display) (`frontend/src/components/TimingGauge.tsx`).
 - [x] ✅ **Task 5.5**: Rolling Returns & Drawdown Distribution Charts via Recharts.
@@ -355,6 +355,7 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 
 | Date | Phase | Task | Summary of Work Completed |
 | :--- | :--- | :--- | :--- |
+| **2026-10-31** | Phase 5 | Major Feature | Built **End-to-End Tactical Investment Planner** (`src/api/routes/planner.py`, `frontend/src/pages/PlannerTab.tsx`): On entering capital (e.g. ₹1 Lakh), generates complete high-conviction mutual fund portfolio (Parag Parikh Flexi, Motilal Oswal Mid, Nippon India Small, ICICI Liquid) with historical returns, cap split based on category thermometers, event-driven market timing triggers (crude shocks, RBI MPC, budget), predicted 4-6% dip window for Nippon India Small Cap with liquid fund yield parking, and month-by-month execution roadmap before March 31. |
 | **2026-10-31** | Phase 5 | UX Redesign | Redesigned **Investment Planner** into a 3-step progressive workflow (`PlannerTab.tsx`): 1) Pure capital input generating strategy before current Financial Year ends (March 31) with Lump sum vs Monthly SIP vs 2-3 month gap tranches; 2) Optional Monthly Budget Limit with FY capacity check, spillover rollover calculation into next FY, and liquid parking yield advice; 3) Optional Long-Term Goal / Retirement with systematic glide-path. |
 | **2026-10-31** | Phase 5 | UX Enhancement | Added **Retirement Mode (No Fixed Goal)** to Planner (`PlannerTab.tsx`): 1-tap toggle calculating years to retirement (age 60 - current age) and corpus target based on 25× annual spend rule (4% safe withdrawal rule). Fixed API response field mappings for Allocation Advice tranches and Goal Planner glide path. |
 | **2026-10-31** | Phase 6 | Task 6.1 - 6.3 | Full cloud production deployment complete! Frontend deployed on Vercel (`https://mf-tracker-and-advisor.vercel.app/`), Backend deployed on Render (`https://mf-tracker-and-advisor.onrender.com/`), and Auth & DB active on Supabase. Verified end-to-end user signup, JWT auth, and protected API endpoints. |

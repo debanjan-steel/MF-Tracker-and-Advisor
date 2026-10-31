@@ -172,3 +172,60 @@ export interface TaxSummary {
   lines: TaxLine[]
 }
 
+// ── Tactical Investment Plan Types ──────────────────────────────────────────
+export interface CategoryAllocation {
+  category: string
+  allocation_pct: number
+  allocation_amount: number
+  temperature_score: number
+  temperature_label: string
+  temperature_emoji: string
+  valuation_status: string
+  rationale: string
+  color: string
+}
+
+export interface RecommendedFund {
+  category: string
+  fund_name: string
+  scheme_code: number
+  cagr_3y: number
+  cagr_5y: number
+  sharpe: number
+  max_drawdown: number
+  allocation_pct: number
+  allocation_amount: number
+  action_timing: string
+  timing_rationale: string
+  is_dip_trigger?: boolean
+  predicted_dip_pct?: number
+  predicted_dip_window?: string
+}
+
+export interface MacroCatalyst {
+  event: string
+  date: string
+  impact: string
+  action: string
+}
+
+export interface ExecutionRoadmapPhase {
+  month: string
+  action: string
+  deployed_equity: number
+  parked_liquid: number
+  status: string
+}
+
+export interface TacticalPlan {
+  capital: number
+  posture: string
+  timing_score: number
+  danger_score: number
+  forecast_summary: string
+  category_allocations: CategoryAllocation[]
+  fund_recommendations: RecommendedFund[]
+  macro_catalysts: MacroCatalyst[]
+  execution_roadmap: ExecutionRoadmapPhase[]
+}
+

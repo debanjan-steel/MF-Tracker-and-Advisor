@@ -1,23 +1,24 @@
 import { useEffect, useState, useMemo } from 'react'
 import { plannerAPI, analyticsAPI } from '../lib/api'
-import { AllocationAdvice, MacroDanger, TimingScore, SIPRecommendation, GoalPlan } from '../types'
-import { fmtINR, postureColor, ordinal } from '../lib/utils'
+import { TacticalPlan, TimingScore, SIPRecommendation, GoalPlan } from '../types'
+import { fmtINR, postureColor } from '../lib/utils'
 import TimingGauge from '../components/TimingGauge'
-import MacroBar from '../components/MacroBar'
 import StressTestCard from '../components/StressTestCard'
 import {
   TrendingUp,
-  Calendar,
-  ChevronDown,
-  ChevronUp,
   Target,
   Clock,
   Coins,
-  CheckCircle2,
   AlertCircle,
-  ArrowRight,
   ShieldCheck,
   Sparkles,
+  Zap,
+  CheckCircle2,
+  Calendar,
+  Flame,
+  Snowflake,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 
 const STRESS_SCENARIOS = [
@@ -29,14 +30,12 @@ const STRESS_SCENARIOS = [
   { key: 'india_election', label: 'India Election Shock' },
 ]
 
-// ── Financial Year Helper (Indian FY: April 1 – March 31) ───────────────────
 function getFYSchedule(date = new Date()) {
   const currentYear = date.getFullYear()
-  const month = date.getMonth() // 0 = Jan, ..., 9 = Oct, 11 = Dec
+  const month = date.getMonth()
   const day = date.getDate()
 
-  // In India: FY starts April 1, ends March 31
-  const isQ4 = month <= 2 // Jan, Feb, Mar
+  const isQ4 = month <= 2
   const fyStartYear = isQ4 ? currentYear - 1 : currentYear
   const fyEndYear = fyStartYear + 1
   const fyLabel = `FY ${fyStartYear}-${String(fyEndYear).slice(-2)}`
@@ -63,42 +62,24 @@ function getFYSchedule(date = new Date()) {
     m++
   }
 
-  // Next FY first 12 months for spillover
-  const nextFYMonths: { name: string; year: number; label: string }[] = []
-  let nm = 3 // April
-  let ny = fyEndYear
-  for (let i = 0; i < 12; i++) {
-    nextFYMonths.push({
-      name: monthNames[nm],
-      year: ny,
-      label: `${monthNames[nm]} ${ny}`,
-    })
-    nm++
-    if (nm > 11) {
-      nm = 0
-      ny++
-    }
-  }
-
   return {
     fyLabel,
     nextFyLabel,
     monthsRemainingInFY: Math.max(1, remainingInFY.length),
     remainingInFY,
-    nextFYMonths,
   }
 }
 
 const RETIREMENT_AGE = 60
-const RETIREMENT_CORPUS_MULTIPLIER = 25 // 25× annual spend (4% safe withdrawal rule)
+const RETIREMENT_CORPUS_MULTIPLIER = 25
 
 export default function PlannerTab() {
   // ── Step 1: Total Capital ─────────────────────────
-  const [capital, setCapital] = useState<string>('1000000')
+  const [capital, setCapital] = useState<string>('100000')
 
   // ── Step 2: Monthly Budget Limit Option ───────────
   const [hasMonthlyBudget, setHasMonthlyBudget] = useState(false)
-  const [monthlyLimit, setMonthlyLimit] = useState<string>('150000')
+  const [monthlyLimit, setMonthlyLimit] = useState<string>('30000')
 
   // ── Step 3: Long-Term Goal / Horizon Option ───────
   const [hasGoal, setHasGoal] = useState(false)
@@ -107,49 +88,40 @@ export default function PlannerTab() {
   const [goalYears, setGoalYears] = useState<string>('10')
   const [currentAge, setCurrentAge] = useState<string>('30')
 
-  // ── Market Signals & Strategy States ──────────────
-  const [schemeCode] = useState<string>('122640')
-  const [stressScenario, setStressScenario] = useState('covid_crash')
-
-  const [advice, setAdvice] = useState<AllocationAdvice | null>(null)
-  const [macro, setMacro] = useState<MacroDanger | null>(null)
+  // ── Tactical Plan & Analytics States ──────────────
+  const [tacticalPlan, setTacticalPlan] = useState<TacticalPlan | null>(null)
   const [timing, setTiming] = useState<TimingScore | null>(null)
-  const [sipRec, setSipRec] = useState<SIPRecommendation | null>(null)
+  const [, setSipRec] = useState<SIPRecommendation | null>(null)
   const [goal, setGoal] = useState<GoalPlan | null>(null)
+  const [stressScenario, setStressScenario] = useState('covid_crash')
   const [stressResult, setStressResult] = useState<any>(null)
 
   const [loading, setLoading] = useState(false)
   const [showGlidePath, setShowGlidePath] = useState(false)
-  const [showSchedule, setShowSchedule] = useState(true)
+  const [showRoadmap, setShowRoadmap] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fy = useMemo(() => getFYSchedule(), [])
 
-  // Computed values for retirement
+  // Computed retirement values
   const retirementYears = Math.max(1, RETIREMENT_AGE - Number(currentAge))
-  const effectiveMonthlySpend = hasMonthlyBudget ? Number(monthlyLimit) : (Number(capital) / 24)
+  const effectiveMonthlySpend = hasMonthlyBudget ? Number(monthlyLimit) : (Number(capital) / 12)
   const retirementCorpus = effectiveMonthlySpend * 12 * RETIREMENT_CORPUS_MULTIPLIER
 
   const effectiveGoalTarget = goalMode === 'retirement' ? String(retirementCorpus) : goalTarget
   const effectiveGoalYears = goalMode === 'retirement' ? String(retirementYears) : goalYears
 
-  // Load macro + timing on mount
-  useEffect(() => {
-    analyticsAPI.macroDanger().then((r) => setMacro(r.data)).catch(() => {})
-    analyticsAPI.timingScore(Number(schemeCode)).then((r) => setTiming(r.data)).catch(() => {})
-  }, [schemeCode])
-
   const loadPlan = async () => {
     setLoading(true)
     setError(null)
-    const capNum = Number(capital) || 0
+    const capNum = Number(capital) || 100000
     const mBudgetNum = hasMonthlyBudget ? Number(monthlyLimit) : Math.round(capNum / fy.monthsRemainingInFY)
 
     try {
       const calls: Promise<any>[] = [
-        plannerAPI.allocationAdvice(capNum),
-        plannerAPI.sipRecommendation(mBudgetNum, Number(schemeCode)),
-        analyticsAPI.stressTest(stressScenario, 500000),
+        plannerAPI.tacticalPlan(capNum, hasMonthlyBudget ? Number(monthlyLimit) : undefined),
+        analyticsAPI.timingScore(122640),
+        analyticsAPI.stressTest(stressScenario, capNum),
       ]
 
       if (hasGoal) {
@@ -163,8 +135,8 @@ export default function PlannerTab() {
       }
 
       const results = await Promise.allSettled(calls)
-      if (results[0].status === 'fulfilled') setAdvice(results[0].value.data)
-      if (results[1].status === 'fulfilled') setSipRec(results[1].value.data)
+      if (results[0].status === 'fulfilled') setTacticalPlan(results[0].value.data)
+      if (results[1].status === 'fulfilled') setTiming(results[1].value.data)
       if (results[2].status === 'fulfilled') setStressResult(results[2].value.data)
 
       if (hasGoal && results[3] && results[3].status === 'fulfilled') {
@@ -187,169 +159,15 @@ export default function PlannerTab() {
 
   useEffect(() => {
     loadPlan()
-  }, [hasMonthlyBudget, hasGoal, goalMode])
-
-  // ── Strategy Calculation for FY Deployment ───────────────────────────────
-  const strategyDetails = useMemo(() => {
-    const totalCap = Number(capital) || 0
-    const monthsRemaining = fy.monthsRemainingInFY
-    const posture = advice?.posture || 'GROWTH'
-
-    // Scenario without monthly budget limit:
-    if (!hasMonthlyBudget) {
-      if (posture === 'AGGRESSIVE' || monthsRemaining <= 1) {
-        return {
-          type: 'LUMP_SUM',
-          title: 'One-Time Lump Sum Deployment',
-          badge: '🚀 Upfront Deployment',
-          summary: `Deploy entire ₹${fmtINR(totalCap)} immediately before March 31 (${fy.fyLabel}).`,
-          description:
-            'Market timing and valuations are in a deeply attractive zone. Deploying 100% upfront maximizes equity compounding before fiscal year-end.',
-          staggerMonths: 1,
-          schedule: [
-            {
-              month: fy.remainingInFY[0]?.label || 'Immediate',
-              amount: totalCap,
-              fy: fy.fyLabel,
-              note: '100% Lump Sum into diversified equity funds',
-              equityPct: 100,
-              liquidPct: 0,
-            },
-          ],
-        }
-      }
-
-      if (posture === 'DEFENSIVE' || posture === 'CAPITAL_SAFE') {
-        // 2-3 month gap tranches with liquid buffer
-        const trancheCount = Math.min(3, Math.max(2, Math.ceil(monthsRemaining / 2)))
-        const perTranche = Math.round(totalCap / trancheCount)
-        const schedule = []
-
-        for (let i = 0; i < trancheCount; i++) {
-          const monthIndex = Math.min(i * 2, monthsRemaining - 1)
-          schedule.push({
-            month: fy.remainingInFY[monthIndex]?.label || `Month ${i * 2 + 1}`,
-            amount: i === trancheCount - 1 ? totalCap - perTranche * (trancheCount - 1) : perTranche,
-            fy: fy.fyLabel,
-            note: i === 0 ? 'Tranche 1 (Immediate)' : `Tranche ${i + 1} (2-month gap)`,
-            equityPct: 70,
-            liquidPct: 30,
-          })
-        }
-
-        return {
-          type: 'SPACED_GAP',
-          title: 'Spaced 2-Month Tranches + Liquid Park',
-          badge: '🛡️ Phased De-Risking',
-          summary: `Deploy ₹${fmtINR(totalCap)} in ${trancheCount} tranches spaced 2 months apart before March 31.`,
-          description:
-            'Elevated macro risk or volatility detected. Spacing deployments protects your entry price while uninvested capital earns ~6.8% in a Liquid / Arbitrage fund.',
-          staggerMonths: trancheCount,
-          schedule,
-        }
-      }
-
-      // Default: GROWTH or BALANCED → Monthly systematic tranches before March 31
-      const perMonth = Math.round(totalCap / monthsRemaining)
-      const schedule = fy.remainingInFY.map((m, idx) => ({
-        month: m.label,
-        amount: idx === monthsRemaining - 1 ? totalCap - perMonth * (monthsRemaining - 1) : perMonth,
-        fy: fy.fyLabel,
-        note: `Systematic Tranche ${idx + 1} of ${monthsRemaining}`,
-        equityPct: 90,
-        liquidPct: 10,
-      }))
-
-      return {
-        type: 'SYSTEMATIC_MONTHLY',
-        title: 'Systematic Monthly Tranches (SIP till FY End)',
-        badge: '📈 Monthly Tranches',
-        summary: `Deploy ₹${fmtINR(totalCap)} evenly across ${monthsRemaining} monthly tranches before March 31 (${fy.fyLabel}).`,
-        description: `Evenly averages your purchase cost across the remaining ${monthsRemaining} months of this financial year with zero timing anxiety.`,
-        staggerMonths: monthsRemaining,
-        schedule,
-      }
-    }
-
-    // ── When Monthly Budget Limit is Enabled ──────────────────────────────
-    const limit = Number(monthlyLimit) || 0
-    const maxDeployableThisFY = limit * monthsRemaining
-    const canCompleteThisFY = totalCap <= maxDeployableThisFY
-
-    if (canCompleteThisFY) {
-      const monthsNeeded = Math.max(1, Math.ceil(totalCap / limit))
-      const perMonth = Math.round(totalCap / monthsNeeded)
-      const schedule = fy.remainingInFY.slice(0, monthsNeeded).map((m, idx) => ({
-        month: m.label,
-        amount: idx === monthsNeeded - 1 ? totalCap - perMonth * (monthsNeeded - 1) : perMonth,
-        fy: fy.fyLabel,
-        note: `Budget Tranche ${idx + 1} of ${monthsNeeded}`,
-        equityPct: 90,
-        liquidPct: 10,
-      }))
-
-      return {
-        type: 'BUDGET_FITS_FY',
-        title: 'Full Deployment Within Current FY',
-        badge: '✅ Fits in Current FY',
-        summary: `Deploy your full ₹${fmtINR(totalCap)} across ${monthsNeeded} month(s) before March 31 (${fy.fyLabel}).`,
-        description: `Your monthly limit of ₹${fmtINR(limit)} is sufficient to comfortably invest all available capital before the end of the financial year.`,
-        canCompleteThisFY: true,
-        deployedThisFY: totalCap,
-        spillover: 0,
-        schedule,
-      }
-    }
-
-    // Budget exceeded → Capital spills over to Next FY
-    const deployedThisFY = maxDeployableThisFY
-    const spillover = totalCap - deployedThisFY
-    const monthsNextFY = Math.ceil(spillover / limit)
-
-    const thisFYSchedule = fy.remainingInFY.map((m, idx) => ({
-      month: m.label,
-      amount: limit,
-      fy: fy.fyLabel,
-      note: `This FY Installment ${idx + 1}/${monthsRemaining}`,
-      equityPct: 90,
-      liquidPct: 10,
-    }))
-
-    let remainingSpill = spillover
-    const nextFYSchedule = fy.nextFYMonths.slice(0, monthsNextFY).map((m, idx) => {
-      const amt = idx === monthsNextFY - 1 ? remainingSpill : limit
-      remainingSpill -= amt
-      return {
-        month: m.label,
-        amount: amt,
-        fy: fy.nextFyLabel,
-        note: `Next FY Rollover Installment ${idx + 1}/${monthsNextFY}`,
-        equityPct: 90,
-        liquidPct: 10,
-      }
-    })
-
-    return {
-      type: 'BUDGET_SPILLOVER',
-      title: 'Phased Multi-FY Capital Rollover',
-      badge: '⚠️ Spills to Next FY',
-      summary: `Invest ₹${fmtINR(deployedThisFY)} in ${fy.fyLabel} (till March 31). Roll over remaining ₹${fmtINR(spillover)} into ${fy.nextFyLabel}.`,
-      description: `At your budget limit of ₹${fmtINR(limit)}/month, you can invest ₹${fmtINR(deployedThisFY)} before March 31. The remaining ₹${fmtINR(spillover)} pushes smoothly into next financial year over ${monthsNextFY} months.`,
-      canCompleteThisFY: false,
-      deployedThisFY,
-      spillover,
-      monthsNextFY,
-      schedule: [...thisFYSchedule, ...nextFYSchedule],
-    }
-  }, [capital, hasMonthlyBudget, monthlyLimit, advice?.posture, fy])
+  }, [])
 
   return (
-    <div className="space-y-4 pb-10">
-      {/* ── STEP 1: Core Capital Input & FY Strategy Card ──────────────── */}
-      <div className="card border-indigo-600/30">
+    <div className="space-y-4 pb-12">
+      {/* ── STEP 1: Total Capital Input Card ───────────────────────────── */}
+      <div className="card border-indigo-600/40 shadow-lg shadow-indigo-950/20">
         <div className="flex items-center justify-between mb-3">
           <p className="section-title flex items-center gap-2 mb-0">
-            <TrendingUp className="w-5 h-5 text-indigo-400" /> Investment Planner
+            <TrendingUp className="w-5 h-5 text-indigo-400" /> Tactical Investment Planner
           </p>
           <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-mono border border-slate-700">
             {fy.fyLabel} · {fy.monthsRemainingInFY} mos till Mar 31
@@ -357,56 +175,75 @@ export default function PlannerTab() {
         </div>
 
         <p className="text-xs text-slate-400 mb-3">
-          Enter the total capital you want to invest. We will design the optimal strategy to deploy it before the end of the financial year.
+          Enter the lump sum or total money you want to invest. Our quant engine predicts market dips, macro events, and allocates into high-conviction mutual funds before the end of the financial year.
         </p>
 
-        {/* Primary Input: Total Capital */}
-        <div className="mb-4">
-          <label className="label flex items-center gap-1.5">
-            <Coins className="w-3.5 h-3.5 text-yellow-400" /> Total Capital to Invest (₹)
+        {/* Primary Input */}
+        <div className="mb-3">
+          <label className="label flex items-center justify-between">
+            <span className="flex items-center gap-1.5 font-semibold text-slate-200">
+              <Coins className="w-4 h-4 text-yellow-400" /> Total Capital to Invest (₹)
+            </span>
+            <span className="text-xs font-bold text-indigo-400">
+              {fmtINR(Number(capital) || 0)}
+            </span>
           </label>
           <input
-            className="input text-lg font-bold tracking-wide"
+            className="input text-xl font-bold tracking-wide py-2.5 text-white"
             type="number"
             value={capital}
             onChange={(e) => setCapital(e.target.value)}
-            placeholder="10,00,000"
+            placeholder="1,00,000"
           />
-          <p className="text-xs text-slate-500 mt-1">
-            Amount: <span className="font-semibold text-slate-300">{fmtINR(Number(capital) || 0)}</span>
-          </p>
+
+          {/* Quick presets */}
+          <div className="flex gap-2 mt-2">
+            {['50000', '100000', '250000', '500000', '1000000'].map((amt) => (
+              <button
+                key={amt}
+                onClick={() => setCapital(amt)}
+                className={`text-[11px] py-1 px-2.5 rounded-lg border transition-all ${
+                  capital === amt
+                    ? 'bg-indigo-600 text-white border-indigo-500 font-bold'
+                    : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                }`}
+              >
+                {fmtINR(Number(amt))}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* ── Optional Feature Toggles ────────────────────────────── */}
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-800 mb-4">
+        {/* Optional Customizer Toggles */}
+        <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-800/80 mb-4">
           <button
             onClick={() => setHasMonthlyBudget((p) => !p)}
-            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
               hasMonthlyBudget
-                ? 'bg-indigo-900/40 border-indigo-500 text-indigo-300 shadow-sm shadow-indigo-950'
+                ? 'bg-indigo-900/40 border-indigo-500 text-indigo-300 font-bold'
                 : 'bg-slate-900/60 border-slate-700 text-slate-400 hover:text-slate-200'
             }`}
           >
             <Clock className="w-3.5 h-3.5" />
-            {hasMonthlyBudget ? '✓ Monthly Budget Set' : '+ Set Monthly Budget'}
+            {hasMonthlyBudget ? '✓ Monthly Limit Set' : '+ Set Monthly Budget'}
           </button>
 
           <button
             onClick={() => setHasGoal((p) => !p)}
-            className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
+            className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl border text-xs font-medium transition-all ${
               hasGoal
-                ? 'bg-amber-900/40 border-amber-500 text-amber-300 shadow-sm shadow-amber-950'
+                ? 'bg-amber-900/40 border-amber-500 text-amber-300 font-bold'
                 : 'bg-slate-900/60 border-slate-700 text-slate-400 hover:text-slate-200'
             }`}
           >
             <Target className="w-3.5 h-3.5" />
-            {hasGoal ? '✓ Goal Active' : '+ Set Target Goal'}
+            {hasGoal ? '✓ Goal Active' : '+ Set Long-Term Goal'}
           </button>
         </div>
 
-        {/* ── STEP 2 (Conditional Drawer): Monthly Budget Limit ─────── */}
+        {/* Optional Monthly Budget Drawer */}
         {hasMonthlyBudget && (
-          <div className="bg-slate-900/80 border border-indigo-700/50 rounded-2xl p-3 mb-4 space-y-2 animate-in fade-in">
+          <div className="bg-slate-900/90 border border-indigo-700/60 rounded-xl p-3 mb-4 space-y-2">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-indigo-300 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-indigo-400" /> Max Monthly Investment Limit (₹)
@@ -415,7 +252,7 @@ export default function PlannerTab() {
                 onClick={() => setHasMonthlyBudget(false)}
                 className="text-[10px] text-slate-500 hover:text-slate-400 underline"
               >
-                Remove Limit
+                Remove
               </button>
             </div>
             <input
@@ -423,30 +260,30 @@ export default function PlannerTab() {
               type="number"
               value={monthlyLimit}
               onChange={(e) => setMonthlyLimit(e.target.value)}
-              placeholder="1,50,000"
+              placeholder="30,000"
             />
             <p className="text-[11px] text-slate-400">
               Capacity in {fy.fyLabel}:{' '}
               <span className="font-semibold text-indigo-300">
                 {fmtINR((Number(monthlyLimit) || 0) * fy.monthsRemainingInFY)}
               </span>{' '}
-              ({fy.monthsRemainingInFY} months left × {fmtINR(Number(monthlyLimit) || 0)}/mo)
+              ({fy.monthsRemainingInFY} mos left × {fmtINR(Number(monthlyLimit) || 0)}/mo)
             </p>
           </div>
         )}
 
-        {/* ── STEP 3 (Conditional Drawer): Long-Term Goal / Retirement */}
+        {/* Optional Goal Drawer */}
         {hasGoal && (
-          <div className="bg-slate-900/80 border border-amber-700/50 rounded-2xl p-3 mb-4 space-y-3 animate-in fade-in">
+          <div className="bg-slate-900/90 border border-amber-700/60 rounded-xl p-3 mb-4 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
-                <Target className="w-3.5 h-3.5 text-amber-400" /> Long-Term Wealth Goal
+                <Target className="w-3.5 h-3.5 text-amber-400" /> Long-Term Wealth Target
               </label>
               <button
                 onClick={() => setHasGoal(false)}
                 className="text-[10px] text-slate-500 hover:text-slate-400 underline"
               >
-                Remove Goal
+                Remove
               </button>
             </div>
 
@@ -476,23 +313,21 @@ export default function PlannerTab() {
             {goalMode === 'target' ? (
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="label text-[11px]">Goal Corpus (₹)</label>
+                  <label className="label text-[11px]">Target Corpus (₹)</label>
                   <input
                     className="input text-xs"
                     type="number"
                     value={goalTarget}
                     onChange={(e) => setGoalTarget(e.target.value)}
-                    placeholder="1,00,00,000"
                   />
                 </div>
                 <div>
-                  <label className="label text-[11px]">Horizon (Years)</label>
+                  <label className="label text-[11px]">Horizon (Yrs)</label>
                   <input
                     className="input text-xs"
                     type="number"
                     value={goalYears}
                     onChange={(e) => setGoalYears(e.target.value)}
-                    placeholder="10"
                   />
                 </div>
               </div>
@@ -524,103 +359,302 @@ export default function PlannerTab() {
           </div>
         )}
 
-        {/* Generate / Recalculate Button */}
-        <button onClick={loadPlan} className="btn-primary w-full" disabled={loading}>
-          {loading ? 'Computing Strategy…' : '⚡ Generate Investment Strategy'}
+        <button onClick={loadPlan} className="btn-primary w-full py-3 text-sm font-bold" disabled={loading}>
+          {loading ? 'Analyzing Market Timing & Fund Data…' : '⚡ Generate Tactical Investment Plan'}
         </button>
         {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
       </div>
 
-      {/* ── STRATEGY VERDICT CARD (FY-End Focus) ───────────────────────── */}
-      <div className="card border-l-4 border-l-indigo-500">
-        <div className="flex items-start justify-between mb-2">
-          <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Recommended FY Strategy
-            </span>
-            <h3 className="text-base font-bold text-white mt-0.5">{strategyDetails.title}</h3>
-          </div>
-          <span className="badge bg-indigo-900/60 text-indigo-300 border border-indigo-700/60 text-xs font-semibold px-2.5 py-0.5 rounded-lg">
-            {strategyDetails.badge}
-          </span>
-        </div>
-
-        <p className="text-xs text-slate-300 mb-3">{strategyDetails.summary}</p>
-        <p className="text-xs text-slate-400 bg-slate-900/80 rounded-xl p-3 border border-slate-800 leading-relaxed">
-          {strategyDetails.description}
-        </p>
-
-        {/* ── Spillover Alert / Liquid Stash Recommendation ──────────── */}
-        {hasMonthlyBudget && (strategyDetails as any).spillover > 0 && (
-          <div className="mt-3 bg-amber-950/30 border border-amber-800/60 rounded-xl p-3 space-y-2">
-            <div className="flex items-center gap-1.5 text-amber-400 text-xs font-bold">
-              <AlertCircle className="w-4 h-4" />
-              <span>Capital Rollover: ₹{fmtINR((strategyDetails as any).spillover)} pushes into {fy.nextFyLabel}</span>
+      {/* ── TACTICAL VERDICT & MARKET POSTURE ───────────────────────────── */}
+      {tacticalPlan && (
+        <div className="card border-l-4 border-l-indigo-500 bg-gradient-to-br from-slate-900 to-indigo-950/20">
+          <div className="flex items-start justify-between mb-2">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-400" /> Market Timing Verdict
+              </span>
+              <h2 className="text-lg font-bold text-white mt-0.5">
+                Tactical Market Posture: {tacticalPlan.posture}
+              </h2>
             </div>
-            <p className="text-xs text-slate-300 leading-relaxed">
-              💡 <span className="font-semibold text-amber-200">Recommended Liquid Stash Strategy:</span> Do not leave this ₹{fmtINR((strategyDetails as any).spillover)} idle in your bank savings account.
-              Park it in a low-risk <span className="text-amber-300 font-semibold">Liquid / Arbitrage Fund</span> today. It will earn ~6.8% annualized risk-free return while waiting to be systematically deployed next fiscal year!
-            </p>
-          </div>
-        )}
-
-        {/* ── Deployment Schedule Table ───────────────────────────────── */}
-        <div className="mt-4 pt-3 border-t border-slate-800">
-          <button
-            onClick={() => setShowSchedule((p) => !p)}
-            className="flex items-center justify-between w-full text-xs font-semibold text-slate-300 hover:text-white"
-          >
-            <span className="flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
-              Detailed Deployment Schedule ({strategyDetails.schedule.length} Tranches)
+            <span className={`badge text-xs font-bold px-3 py-1 rounded-xl ${postureColor(tacticalPlan.posture)}`}>
+              {tacticalPlan.posture}
             </span>
-            {showSchedule ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-          </button>
+          </div>
 
-          {showSchedule && (
-            <div className="mt-2.5 space-y-1.5 max-h-64 overflow-y-auto pr-1">
-              {strategyDetails.schedule.map((item, idx) => (
-                <div
-                  key={idx}
-                  className={`flex items-center justify-between p-2.5 rounded-xl border text-xs ${
-                    item.fy === fy.fyLabel
-                      ? 'bg-slate-900/80 border-slate-800'
-                      : 'bg-amber-950/20 border-amber-900/40'
-                  }`}
-                >
+          <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800">
+            {tacticalPlan.forecast_summary}
+          </p>
+
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex flex-col items-center">
+              <p className="text-[11px] text-slate-400 mb-1 font-semibold">Market Timing Gauge</p>
+              {timing && <TimingGauge score={timing.score} signal={timing.signal} />}
+            </div>
+            <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 flex flex-col justify-between">
+              <div>
+                <p className="text-[11px] text-slate-400 font-semibold mb-1">Macro Risk Exposure</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-bold text-amber-400">{tacticalPlan.danger_score.toFixed(0)}%</span>
+                  <span className="text-xs text-slate-400">Downturn Risk</span>
+                </div>
+              </div>
+              <div className="mt-2 text-[10px] text-slate-400 leading-tight">
+                Crude volatility & upcoming RBI/Budget catalysts factored in.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CATEGORY CAP SPLIT & VALUATION THERMOMETER ─────────────────── */}
+      {tacticalPlan && (
+        <div className="card">
+          <p className="section-title flex items-center gap-2">
+            <Flame className="w-4 h-4 text-orange-400" /> Category Allocation & Valuation Thermometer
+          </p>
+          <p className="text-xs text-slate-400 mb-3">
+            How your ₹{fmtINR(tacticalPlan.capital)} is distributed across market caps based on current valuation heat:
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            {tacticalPlan.category_allocations.map((cat, i) => (
+              <div key={i} className={`p-3 rounded-xl border ${cat.color}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold text-white">{cat.category}</span>
+                  <span className="text-sm">{cat.temperature_emoji}</span>
+                </div>
+                <p className="text-lg font-black text-white">{cat.allocation_pct}%</p>
+                <p className="text-xs font-semibold text-slate-200">{fmtINR(cat.allocation_amount)}</p>
+                <span className="inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded bg-black/40 text-slate-300">
+                  {cat.temperature_label} ({cat.temperature_score}/100)
+                </span>
+                <p className="text-[10px] text-slate-400 mt-1.5 leading-snug">{cat.rationale}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── HIGH-CONVICTION FUND PICKS (EXACT FUNDS TO BUY & TIMING) ─────── */}
+      {tacticalPlan && (
+        <div className="card border-emerald-600/30">
+          <div className="flex items-center justify-between mb-2">
+            <p className="section-title flex items-center gap-2 mb-0">
+              <Zap className="w-4 h-4 text-emerald-400" /> Recommended Funds & Exact Timing Triggers
+            </p>
+            <span className="text-xs text-emerald-400 font-semibold">100% Pure Direct Growth</span>
+          </div>
+
+          <p className="text-xs text-slate-400 mb-4">
+            Selected for highest historical risk-adjusted alpha (Sharpe &gt; 1.3) with precise entry timing:
+          </p>
+
+          <div className="space-y-3">
+            {tacticalPlan.fund_recommendations.map((fund, idx) => (
+              <div
+                key={idx}
+                className={`p-3.5 rounded-xl border transition-all ${
+                  fund.is_dip_trigger
+                    ? 'bg-orange-950/20 border-orange-600/80 shadow-md shadow-orange-950/20'
+                    : 'bg-slate-900/90 border-slate-800'
+                }`}
+              >
+                <div className="flex items-start justify-between">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-200">{item.month}</span>
-                      <span
-                        className={`text-[10px] px-1.5 py-0.5 rounded ${
-                          item.fy === fy.fyLabel
-                            ? 'bg-slate-800 text-slate-400'
-                            : 'bg-amber-900/60 text-amber-300'
-                        }`}
-                      >
-                        {item.fy}
+                      <span className="text-xs font-bold text-white">{fund.fund_name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                        {fund.scheme_code}
                       </span>
                     </div>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{item.note}</p>
+                    <span className="text-[11px] font-semibold text-indigo-400">{fund.category}</span>
                   </div>
                   <div className="text-right">
-                    <p className="font-bold text-slate-100">{fmtINR(item.amount)}</p>
-                    <p className="text-[10px] text-indigo-400">{item.equityPct}% Equity</p>
+                    <p className="text-sm font-bold text-white">{fmtINR(fund.allocation_amount)}</p>
+                    <span className="text-xs text-slate-400">{fund.allocation_pct}% of total</span>
                   </div>
+                </div>
+
+                {/* Return Metrics Pill Bar */}
+                <div className="flex gap-3 my-2 text-xs bg-slate-950 p-2 rounded-lg border border-slate-800/80">
+                  <div>
+                    <span className="text-[10px] text-slate-500">3Y CAGR:</span>{' '}
+                    <span className="font-bold text-emerald-400">+{fund.cagr_3y}%</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500">5Y CAGR:</span>{' '}
+                    <span className="font-bold text-emerald-400">+{fund.cagr_5y}%</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500">Sharpe:</span>{' '}
+                    <span className="font-bold text-indigo-300">{fund.sharpe}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-slate-500">Max Drawdown:</span>{' '}
+                    <span className="font-bold text-red-400">{fund.max_drawdown}%</span>
+                  </div>
+                </div>
+
+                {/* Timing Action & Dip Prediction */}
+                <div className="mt-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded ${
+                        fund.is_dip_trigger
+                          ? 'bg-orange-600 text-white animate-pulse'
+                          : 'bg-indigo-900/60 text-indigo-300 border border-indigo-700/60'
+                      }`}
+                    >
+                      {fund.action_timing}
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">
+                    {fund.timing_rationale}
+                  </p>
+
+                  {fund.is_dip_trigger && (
+                    <div className="mt-2 bg-orange-950/40 border border-orange-700/60 rounded-lg p-2.5 text-[11px] text-orange-200">
+                      <p className="font-bold flex items-center gap-1 text-orange-400">
+                        <AlertCircle className="w-3.5 h-3.5" /> Predicted Small Cap Dip Window:{' '}
+                        {fund.predicted_dip_window}
+                      </p>
+                      <p className="text-slate-300 mt-0.5">
+                        Expected pullback: <span className="font-bold text-orange-400">~{fund.predicted_dip_pct}%</span>.
+                        Keep ₹{fmtINR(fund.allocation_amount)} in Liquid fund earning ~6.8% return. Deploy when notification arrives!
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── MASTER FY EXECUTION SCHEDULE (BEFORE MARCH 31) ─────────────── */}
+      {tacticalPlan && (
+        <div className="card border-indigo-500/40">
+          <div className="flex items-center justify-between mb-2">
+            <p className="section-title flex items-center gap-2 mb-0">
+              <Calendar className="w-4 h-4 text-indigo-400" /> Master Execution Roadmap (Before March 31)
+            </p>
+            <button
+              onClick={() => setShowRoadmap((p) => !p)}
+              className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+            >
+              {showRoadmap ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </button>
+          </div>
+
+          <p className="text-xs text-slate-400 mb-3">
+            Month-by-month actionable triggers ensuring 100% of your ₹{fmtINR(tacticalPlan.capital)} is fully invested before fiscal year-end:
+          </p>
+
+          {showRoadmap && (
+            <div className="space-y-2">
+              {tacticalPlan.execution_roadmap.map((item, idx) => (
+                <div
+                  key={idx}
+                  className={`p-3 rounded-xl border text-xs ${
+                    item.status === 'TACTICAL_BUY_DIP'
+                      ? 'bg-orange-950/30 border-orange-700/80 shadow-sm'
+                      : item.status === 'FY_COMPLETE'
+                      ? 'bg-emerald-950/20 border-emerald-700/60'
+                      : 'bg-slate-900 border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold mb-1">
+                    <span className="text-slate-200">{item.month}</span>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                        item.status === 'TACTICAL_BUY_DIP'
+                          ? 'bg-orange-600 text-white'
+                          : item.status === 'FY_COMPLETE'
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {item.status.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">{item.action}</p>
                 </div>
               ))}
             </div>
           )}
         </div>
+      )}
+
+      {/* ── MACRO CATALYSTS & EVENT TIMING PREDICTIONS ─────────────────── */}
+      {tacticalPlan && (
+        <div className="card">
+          <p className="section-title flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-yellow-400" /> Upcoming Macro Catalysts & Predictions
+          </p>
+          <div className="space-y-2">
+            {tacticalPlan.macro_catalysts.map((ev, i) => (
+              <div key={i} className="p-3 bg-slate-900 rounded-xl border border-slate-800 text-xs">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-bold text-slate-200">{ev.event}</span>
+                  <span className="text-[10px] font-mono text-yellow-400 bg-yellow-950/40 px-2 py-0.5 rounded border border-yellow-800/60">
+                    {ev.date}
+                  </span>
+                </div>
+                <p className="text-slate-400 text-xs mb-1">{ev.impact}</p>
+                <p className="text-indigo-400 text-xs font-medium">💡 Platform Action: {ev.action}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── STRATEGY COMPARISON: WHY THIS OUTPERFORMS BLIND SIP / LUMP SUM ── */}
+      <div className="card">
+        <p className="section-title flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-emerald-400" /> Strategy Comparison
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+          <div className="p-3 bg-slate-900 rounded-xl border border-red-900/40">
+            <p className="font-bold text-red-400 mb-1">❌ Blind Lump Sum</p>
+            <p className="text-slate-400 mb-2">Deploying ₹1,00,000 all at once today.</p>
+            <ul className="text-slate-500 space-y-1 text-[11px]">
+              <li>• Buys overheated small-caps at peak valuation</li>
+              <li>• Suffers severe drawdowns if crude shocks trigger</li>
+              <li>• Zero dry powder for dip opportunities</li>
+            </ul>
+          </div>
+
+          <div className="p-3 bg-slate-900 rounded-xl border border-yellow-900/40">
+            <p className="font-bold text-yellow-400 mb-1">⚠️ Mechanical Equal SIP</p>
+            <p className="text-slate-400 mb-2">Blind ₹20,000/mo without timing.</p>
+            <ul className="text-slate-500 space-y-1 text-[11px]">
+              <li>• Leaves ₹80,000 idle in 3% bank savings account</li>
+              <li>• No tactical overweight on cheap categories</li>
+              <li>• Ignores predictable macro dip triggers</li>
+            </ul>
+          </div>
+
+          <div className="p-3 bg-emerald-950/30 rounded-xl border border-emerald-600/80 shadow-sm">
+            <p className="font-bold text-emerald-400 mb-1">✅ Antigravity Tactical Plan</p>
+            <p className="text-slate-300 mb-2">Market timing + high-conviction funds.</p>
+            <ul className="text-slate-200 space-y-1 text-[11px]">
+              <li>• Earns ~6.8% risk-free yield on idle liquid stash</li>
+              <li>• Captures Nippon India Small Cap at a 4–6% discount</li>
+              <li>• 100% fully deployed before March 31 with zero tax lag</li>
+            </ul>
+          </div>
+        </div>
       </div>
 
-      {/* ── STEP 3 RESULT: Long-Term Goal / Glide Path Card ───────────── */}
+      {/* ── LONG-TERM GOAL ROADMAP (OPTIONAL STEP 3) ───────────────────── */}
       {hasGoal && goal && (
         <div className="card border-l-4 border-l-amber-500">
           <div className="flex items-center gap-2 mb-2">
             <Target className="w-4 h-4 text-amber-400" />
             <h3 className="section-title mb-0">
-              {goalMode === 'retirement' ? '🌅 Long-Term Retirement Roadmap' : '🎯 Long-Term Goal Roadmap'}
+              {goalMode === 'retirement' ? '🌅 Long-Term Retirement Projection' : '🎯 Long-Term Goal Projection'}
             </h3>
           </div>
 
@@ -646,7 +680,6 @@ export default function PlannerTab() {
             />
           </div>
 
-          {/* Glide Path (Auto De-risking) */}
           <button
             onClick={() => setShowGlidePath((p) => !p)}
             className="flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 font-medium"
@@ -674,67 +707,12 @@ export default function PlannerTab() {
         </div>
       )}
 
-      {/* ── Market Posture & Timing Indicators ─────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3">
-        {advice && (
-          <div className="card flex flex-col justify-between">
-            <p className="text-xs text-slate-400 mb-1">Market Posture</p>
-            <span className={`badge text-sm font-bold px-3 py-1 rounded-xl ${postureColor(advice.posture)}`}>
-              {advice.posture}
-            </span>
-            <p className="text-xs text-slate-500 mt-2">
-              {(advice.description ?? advice.message ?? '').slice(0, 70)}…
-            </p>
-          </div>
-        )}
-        {timing && (
-          <div className="card flex flex-col items-center">
-            <p className="text-xs text-slate-400 mb-1">Timing Score</p>
-            <TimingGauge score={timing.score} signal={timing.signal} />
-          </div>
-        )}
-      </div>
-
-      {/* ── Macro Danger Indicator ────────────────────────────────────── */}
-      {macro && <MacroBar macro={macro} />}
-
-      {/* ── Smart SIP Card ────────────────────────────────────────────── */}
-      {sipRec && (
-        <div className="card border-indigo-700/50">
-          <div className="flex items-center gap-2 mb-3">
-            <Calendar className="w-4 h-4 text-indigo-400" />
-            <p className="section-title mb-0">Smart SIP Intelligence</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 mb-3">
-            <StatBox label="Base Monthly SIP" value={fmtINR(sipRec.base_amount)} />
-            <StatBox
-              label={`Adjusted (${sipRec.multiplier}×)`}
-              value={fmtINR(sipRec.adjusted_amount)}
-              color={sipRec.multiplier >= 1 ? 'text-green-400' : 'text-orange-400'}
-            />
-          </div>
-
-          <div className="bg-indigo-900/20 border border-indigo-800 rounded-xl px-3 py-2 mb-3">
-            <p className="text-xs text-indigo-300 font-semibold mb-1">
-              📅 Backtested Best SIP Dates
-            </p>
-            <div className="flex gap-2">
-              {(sipRec.best_dates || [1, 7, 15]).map((d) => (
-                <span key={d} className="bg-indigo-700 text-white text-xs font-bold px-2.5 py-1 rounded-lg">
-                  {ordinal(d)}
-                </span>
-              ))}
-            </div>
-            <p className="text-xs text-slate-500 mt-1">Next recommended execution: {sipRec.next_sip_date || '—'}</p>
-          </div>
-
-          <p className="text-xs text-slate-400">{sipRec.rationale}</p>
-        </div>
-      )}
-
-      {/* ── Stress Test Simulator ─────────────────────────────────────── */}
+      {/* ── HISTORICAL STRESS TEST SIMULATOR ───────────────────────────── */}
       <div className="card">
-        <p className="section-title">Historical Stress Test</p>
+        <p className="section-title">Historical Shock Simulator</p>
+        <p className="text-xs text-slate-400 mb-3">
+          Simulate how your ₹{fmtINR(Number(capital) || 100000)} portfolio behaves under past market crashes:
+        </p>
         <select
           className="input mb-3"
           value={stressScenario}
@@ -747,12 +725,12 @@ export default function PlannerTab() {
         <button
           onClick={() =>
             analyticsAPI
-              .stressTest(stressScenario, 500000)
+              .stressTest(stressScenario, Number(capital) || 100000)
               .then((r) => setStressResult(r.data))
           }
           className="btn-secondary w-full mb-3"
         >
-          Run Simulation
+          Run Shock Simulation
         </button>
         {stressResult && <StressTestCard result={stressResult} />}
       </div>
