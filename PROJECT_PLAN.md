@@ -337,9 +337,11 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 ---
 
 #### Phase 6: Advanced Extensions, Deployment & Live Verification
-- [ ] 🔄 **Task 6.1**: End-to-end integration and smoke verification of all tabs and API flows.
-- [ ] ⏳ **Task 6.2**: User Cloud Credentials Setup guide (Supabase project, Twilio WhatsApp, GitHub Secrets).
-- [ ] ⏳ **Task 6.3**: Production deployment (Backend on Render / Railway / Fly.io; Frontend on Vercel / Netlify / Cloudflare Pages).
+- [x] ✅ **Task 6.2**: User Cloud Credentials Setup (Supabase project created, connected, and verified live with auth & instant delete).
+- [ ] 🔄 **Task 6.3**: Production cloud deployment:
+  - Backend API: **LIVE** on Render at `https://mf-tracker-and-advisor.onrender.com/` (all 37 endpoints active).
+  - Frontend PWA: Deploying on Vercel.
+- [ ] ⏳ **Task 6.1**: End-to-end integration and smoke verification of all tabs and API flows.
 - [ ] ⏳ **Task 6.4**: Portfolio Overlap & Concentration Analyzer (shared holdings between funds).
 - [ ] ⏳ **Task 6.5**: Direct vs. Regular Plan Compounding Fee Drain Visualizer.
 
@@ -362,6 +364,7 @@ To continuously verify, audit, and improve forecasting accuracy, the backend mai
 | **2026-10-31** | Phase 4 | Tasks 4.1 - 4.5 | Implemented all 37 FastAPI endpoints, Supabase Auth client, Twilio WhatsApp bot, `nightly_sync.py` cloud worker, GitHub Actions workflow `.github/workflows/nightly_sync.yml`. All backend tests passing (`test_api.py`, `test_analytics.py`, `test_pipeline.py`). |
 | **2026-10-31** | Phase 3 | Task 3.8 | Implemented `src/analytics/retrainer.py` (walk-forward retrainer for adaptive feature weight recalibration based on historical accuracy). Integrated into `nightly_sync.py`. |
 | **2026-10-31** | Phase 5 | Tasks 5.1 - 5.11 | Built standalone Vite + React + TypeScript + Tailwind CSS PWA frontend with service worker, 5-tab responsive navigation, TimingGauge SVG, MacroBar, StressTestCard, Recharts NAV & 200 EMA charts, CAS upload with in-memory PAN decryption, and instant hard delete account modal. Production build passing (`dist/` generated). |
+| **2026-10-31** | Phase 6 | Task 6.2 - 6.3 | Connected live Supabase project. Deployed FastAPI backend to Render (`https://mf-tracker-and-advisor.onrender.com/`). Verified live `/health` and `/funds/search` endpoints via HTTPS. |
 
 | Date | Phase | Task | Summary of Work Completed |
 | :--- | :--- | :--- | :--- |
