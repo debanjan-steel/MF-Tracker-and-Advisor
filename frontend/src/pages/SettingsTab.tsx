@@ -52,9 +52,9 @@ export default function SettingsTab() {
           </div>
           <button
             onClick={toggleDark}
-            className={`w-12 h-6 rounded-full relative transition-colors ${darkMode ? 'bg-indigo-600' : 'bg-slate-600'}`}
+            className={`w-12 h-6 rounded-full relative transition-colors shrink-0 focus:outline-none ${darkMode ? 'bg-indigo-600' : 'bg-slate-600'}`}
           >
-            <span className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${darkMode ? 'translate-x-7' : 'translate-x-1'}`} />
+            <span className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${darkMode ? 'translate-x-6' : 'translate-x-0'}`} />
           </button>
         </div>
       </div>

@@ -91,13 +91,13 @@ export default function AlertsTab() {
               </div>
               <button
                 onClick={() => toggle(a.key)}
-                className={`w-12 h-6 rounded-full transition-colors relative ${
+                className={`w-12 h-6 rounded-full transition-colors relative shrink-0 focus:outline-none ${
                   settings[a.key] ? 'bg-indigo-600' : 'bg-slate-700'
                 }`}
               >
                 <span
-                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
-                    settings[a.key] ? 'translate-x-7' : 'translate-x-1'
+                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
+                    settings[a.key] ? 'translate-x-6' : 'translate-x-0'
                   }`}
                 />
               </button>
