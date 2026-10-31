@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_anon_key: str = ""
     supabase_service_role_key: str = ""
+    supabase_publishable_key: str = ""
+    supabase_secret_key: str = ""
+    supabase_jwks_url: str = ""
 
     # --- WhatsApp (Twilio) ---
     twilio_account_sid: str = ""
@@ -44,6 +47,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 @lru_cache()

@@ -21,3 +21,4 @@ services:
         sync: false
       - key: DEFAULT_WHATSAPP_TO
         sync: false
+
