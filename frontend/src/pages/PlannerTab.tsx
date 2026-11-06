@@ -960,23 +960,6 @@ export default function PlannerTab() {
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {plannerMode === 'fy_plan' && (
         <div className="space-y-4">
-          {/* Policy Notice: Only 1 FY Plan at a time */}
-          <div className="bg-slate-900/80 border border-indigo-500/30 rounded-xl px-3.5 py-2.5 text-xs text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
-            <span className="flex items-center gap-2">
-              <span className="text-indigo-400 font-bold">💡 Note:</span>
-              <span>
-                There is <strong>only ONE active saved plan</strong> for investing before the end of the financial year (March 31). Saving a new FY plan will overwrite the previous one.
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => setPlannerMode('future_goals')}
-              className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline shrink-0 text-left"
-            >
-              Want multiple saved plans? Go to Future Goals →
-            </button>
-          </div>
-
           {/* Persistent Saved Plan Quick-Access Banner */}
           {savedPlan && (
             <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/50 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-indigo-950/30">
