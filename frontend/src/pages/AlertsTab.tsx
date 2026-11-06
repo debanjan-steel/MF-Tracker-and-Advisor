@@ -39,10 +39,10 @@ export default function AlertsTab() {
         else if (r.data?.telegram_chat_id) setProvider('telegram')
         else if (r.data?.is_twilio_configured) setProvider('twilio')
       })
-      .catch(() => {})
+      .catch(() => { })
     alertsAPI.history()
       .then((r) => setHistory(r.data || []))
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   const save = async () => {
@@ -100,11 +100,10 @@ export default function AlertsTab() {
           <button
             type="button"
             onClick={() => setProvider('callmebot')}
-            className={`py-2 px-2 rounded-lg text-xs font-semibold flex flex-col items-center gap-1 transition-all ${
-              provider === 'callmebot'
+            className={`py-2 px-2 rounded-lg text-xs font-semibold flex flex-col items-center gap-1 transition-all ${provider === 'callmebot'
                 ? 'bg-emerald-600 text-white shadow-lg'
                 : 'text-slate-400 hover:text-slate-200'
-            }`}
+              }`}
           >
             <span className="flex items-center gap-1 text-[11px]">
               <Zap className="w-3.5 h-3.5 text-amber-300" /> WhatsApp (Free)
@@ -115,11 +114,10 @@ export default function AlertsTab() {
           <button
             type="button"
             onClick={() => setProvider('telegram')}
-            className={`py-2 px-2 rounded-lg text-xs font-semibold flex flex-col items-center gap-1 transition-all ${
-              provider === 'telegram'
+            className={`py-2 px-2 rounded-lg text-xs font-semibold flex flex-col items-center gap-1 transition-all ${provider === 'telegram'
                 ? 'bg-sky-600 text-white shadow-lg'
                 : 'text-slate-400 hover:text-slate-200'
-            }`}
+              }`}
           >
             <span className="flex items-center gap-1 text-[11px]">
               <Send className="w-3.5 h-3.5 text-sky-200" /> Telegram (Free)
@@ -130,11 +128,10 @@ export default function AlertsTab() {
           <button
             type="button"
             onClick={() => setProvider('twilio')}
-            className={`py-2 px-2 rounded-lg text-xs font-semibold flex flex-col items-center gap-1 transition-all ${
-              provider === 'twilio'
+            className={`py-2 px-2 rounded-lg text-xs font-semibold flex flex-col items-center gap-1 transition-all ${provider === 'twilio'
                 ? 'bg-indigo-600 text-white shadow-lg'
                 : 'text-slate-400 hover:text-slate-200'
-            }`}
+              }`}
           >
             <span className="flex items-center gap-1 text-[11px]">
               <MessageCircle className="w-3.5 h-3.5" /> Twilio WhatsApp
@@ -267,14 +264,12 @@ export default function AlertsTab() {
               </div>
               <button
                 onClick={() => toggle(a.key)}
-                className={`w-12 h-6 rounded-full transition-colors relative shrink-0 focus:outline-none ${
-                  settings[a.key] ? 'bg-indigo-600' : 'bg-slate-700'
-                }`}
+                className={`w-12 h-6 rounded-full transition-colors relative shrink-0 focus:outline-none ${settings[a.key] ? 'bg-indigo-600' : 'bg-slate-700'
+                  }`}
               >
                 <span
-                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
-                    settings[a.key] ? 'translate-x-6' : 'translate-x-0'
-                  }`}
+                  className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${settings[a.key] ? 'translate-x-6' : 'translate-x-0'
+                    }`}
                 />
               </button>
             </div>

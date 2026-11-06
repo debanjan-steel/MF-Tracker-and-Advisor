@@ -4,7 +4,7 @@ import { useAppStore } from '../store/appStore'
 import { authAPI } from '../lib/api'
 import {
   User, Moon, Sun, Shield, Clock, Database, AlertTriangle, LogOut, Trash2,
-  ChevronRight, Bell, Lock, Key, Eye, EyeOff, CheckCircle,
+  ChevronRight, Bell, Lock, Key, Eye, EyeOff, CheckCircle, X,
 } from 'lucide-react'
 
 export default function SettingsTab() {
@@ -15,6 +15,7 @@ export default function SettingsTab() {
   const [confirmText, setConfirmText] = useState('')
 
   // Change Password state
+  const [showPasswordModal, setShowPasswordModal] = useState(false)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -24,6 +25,21 @@ export default function SettingsTab() {
   const [pwdLoading, setPwdLoading] = useState(false)
   const [pwdError, setPwdError] = useState<string | null>(null)
   const [pwdSuccess, setPwdSuccess] = useState<string | null>(null)
+
+  const openPasswordModal = () => {
+    setOldPassword('')
+    setNewPassword('')
+    setConfirmPassword('')
+    setPwdError(null)
+    setPwdSuccess(null)
+    setShowPasswordModal(true)
+  }
+
+  const closePasswordModal = () => {
+    setShowPasswordModal(false)
+    setPwdError(null)
+    setPwdSuccess(null)
+  }
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -50,6 +66,9 @@ export default function SettingsTab() {
       setOldPassword('')
       setNewPassword('')
       setConfirmPassword('')
+      setTimeout(() => {
+        closePasswordModal()
+      }, 1600)
     } catch (err: any) {
       setPwdError(
         err.response?.data?.detail || err.message || 'Failed to change password. Please verify your old password.'
@@ -99,111 +118,158 @@ export default function SettingsTab() {
         </button>
       </div>
 
-      {/* ── Change Password ──────────────────────── */}
+      {/* ── Change Password Option ─────────────────── */}
       <div className="card">
-        <p className="section-title flex items-center gap-2">
-          <Key className="w-4 h-4 text-indigo-400" /> Change Password
-        </p>
-        <p className="text-xs text-slate-400 mb-3">
-          Update your account password securely.
-        </p>
-
-        <form onSubmit={handlePasswordChange} className="space-y-3">
-          {/* Old Password */}
-          <div>
-            <label className="label text-xs">Type Old Password</label>
-            <div className="relative">
-              <input
-                type={showOldPwd ? 'text' : 'password'}
-                className="input pr-10 text-sm"
-                placeholder="Enter current password"
-                value={oldPassword}
-                onChange={(e) => setOldPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                onClick={() => setShowOldPwd(!showOldPwd)}
-              >
-                {showOldPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+              <Key className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-slate-100 leading-tight">Password &amp; Security</p>
+              <p className="text-xs text-slate-400 mt-0.5">Click to change your account password</p>
             </div>
           </div>
-
-          {/* New Password */}
-          <div>
-            <label className="label text-xs">Type New Password</label>
-            <div className="relative">
-              <input
-                type={showNewPwd ? 'text' : 'password'}
-                className="input pr-10 text-sm"
-                placeholder="Minimum 6 characters"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={6}
-                autoComplete="new-password"
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                onClick={() => setShowNewPwd(!showNewPwd)}
-              >
-                {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Confirm New Password */}
-          <div>
-            <label className="label text-xs">Confirm New Password</label>
-            <div className="relative">
-              <input
-                type={showConfirmPwd ? 'text' : 'password'}
-                className="input pr-10 text-sm"
-                placeholder="Re-type new password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={6}
-                autoComplete="new-password"
-              />
-              <button
-                type="button"
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                onClick={() => setShowConfirmPwd(!showConfirmPwd)}
-              >
-                {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* Feedback */}
-          {pwdError && (
-            <div className="text-red-400 text-xs bg-red-900/20 border border-red-800 rounded-lg px-3 py-2 flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
-              <span>{pwdError}</span>
-            </div>
-          )}
-
-          {pwdSuccess && (
-            <div className="text-emerald-400 text-xs bg-emerald-900/20 border border-emerald-800 rounded-lg px-3 py-2 flex items-center gap-2">
-              <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
-              <span>{pwdSuccess}</span>
-            </div>
-          )}
-
           <button
-            type="submit"
-            className="btn-primary w-full mt-2"
-            disabled={pwdLoading}
+            onClick={openPasswordModal}
+            className="btn-primary text-xs font-semibold px-4 py-2 flex items-center gap-1.5 shrink-0"
           >
-            {pwdLoading ? 'Updating password…' : 'Change Password'}
+            Change Password <ChevronRight className="w-3.5 h-3.5" />
           </button>
-        </form>
+        </div>
       </div>
+
+      {/* ── Password Modal Popup ──────────────────── */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <button
+              onClick={closePasswordModal}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition-colors"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="p-2 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+                <Key className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-100">Change Password</h3>
+                <p className="text-xs text-slate-400">Enter your old password and choose a new one</p>
+              </div>
+            </div>
+
+            <form onSubmit={handlePasswordChange} className="space-y-3.5 mt-5">
+              {/* Old Password */}
+              <div>
+                <label className="label text-xs">Type Old Password</label>
+                <div className="relative">
+                  <input
+                    type={showOldPwd ? 'text' : 'password'}
+                    className="input pr-10 text-sm"
+                    placeholder="Enter current password"
+                    value={oldPassword}
+                    onChange={(e) => setOldPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    onClick={() => setShowOldPwd(!showOldPwd)}
+                  >
+                    {showOldPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div>
+                <label className="label text-xs">Type New Password</label>
+                <div className="relative">
+                  <input
+                    type={showNewPwd ? 'text' : 'password'}
+                    className="input pr-10 text-sm"
+                    placeholder="Minimum 6 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    onClick={() => setShowNewPwd(!showNewPwd)}
+                  >
+                    {showNewPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm / Retype New Password */}
+              <div>
+                <label className="label text-xs">Re-type New Password</label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPwd ? 'text' : 'password'}
+                    className="input pr-10 text-sm"
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    onClick={() => setShowConfirmPwd(!showConfirmPwd)}
+                  >
+                    {showConfirmPwd ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Feedback messages */}
+              {pwdError && (
+                <div className="text-red-400 text-xs bg-red-900/30 border border-red-800 rounded-xl px-3 py-2 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+                  <span>{pwdError}</span>
+                </div>
+              )}
+
+              {pwdSuccess && (
+                <div className="text-emerald-400 text-xs bg-emerald-900/30 border border-emerald-800 rounded-xl px-3 py-2 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0 text-emerald-400" />
+                  <span>{pwdSuccess}</span>
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={closePasswordModal}
+                  className="btn-secondary flex-1"
+                  disabled={pwdLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary flex-1"
+                  disabled={pwdLoading}
+                >
+                  {pwdLoading ? 'Updating…' : 'Update Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ── Preferences ───────────────────────────── */}
       <div className="card">
