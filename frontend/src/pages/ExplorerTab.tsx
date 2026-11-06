@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { fundsAPI, analyticsAPI } from '../lib/api'
 import { SchemeInfo, Scorecard, Thermometer } from '../types'
 import { fmtPct, fmt, thermometerColor, signalColor } from '../lib/utils'
@@ -25,16 +25,28 @@ export default function ExplorerTab() {
   const [loadingFund, setLoadingFund] = useState(false)
   const [activeSection, setActiveSection] = useState<'search' | 'thermo' | 'backtest'>('search')
 
-  const doSearch = useCallback(async () => {
-    if (!query.trim()) return
+  const doSearch = useCallback(async (q: string) => {
+    if (!q.trim() || q.length < 2) return
     setSearching(true)
     try {
-      const { data } = await fundsAPI.search(query)
+      const { data } = await fundsAPI.search(q)
       setResults(data?.results || data || [])
     } finally {
       setSearching(false)
     }
-  }, [query])
+  }, [])
+
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleQueryChange = (val: string) => {
+    setQuery(val)
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    if (val.length >= 2) {
+      searchTimer.current = setTimeout(() => doSearch(val), 300)
+    } else {
+      setResults([])
+    }
+  }
 
   const selectFund = async (scheme: SchemeInfo) => {
     setSelected(scheme)
@@ -105,22 +117,28 @@ export default function ExplorerTab() {
               className="input pl-10"
               placeholder="Search fund name or AMC…"
               value={query}
-              onChange={(e) => { setQuery(e.target.value); if (e.target.value.length > 2) doSearch() }}
-              onKeyDown={(e) => e.key === 'Enter' && doSearch()}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && doSearch(query)}
             />
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            {searching && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 animate-pulse">searching…</span>
+            )}
           </div>
 
           {results.length > 0 && (
-            <div className="card p-0 overflow-hidden max-h-64 overflow-y-auto">
+            <div className="bg-slate-800 border border-slate-700 rounded-xl overflow-hidden max-h-64 overflow-y-auto shadow-xl">
+              {searching && (
+                <p className="text-xs text-slate-500 text-center py-2 animate-pulse">Searching…</p>
+              )}
               {results.slice(0, 20).map((r) => (
                 <button
                   key={r.scheme_code}
                   onClick={() => selectFund(r)}
-                  className="w-full text-left px-4 py-3 hover:bg-slate-700 border-b border-slate-700/50 last:border-0"
+                  className="w-full text-left px-4 py-3 hover:bg-slate-700 border-b border-slate-700/50 last:border-0 transition-colors"
                 >
-                  <p className="text-sm text-slate-100 truncate">{r.scheme_name}</p>
-                  <p className="text-xs text-slate-500">{r.fund_house} · {r.scheme_category}</p>
+                  <p className="text-sm font-medium text-slate-100 leading-tight">{r.scheme_name}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{r.fund_house} · {r.scheme_category}</p>
                 </button>
               ))}
             </div>
