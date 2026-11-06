@@ -1,8 +1,25 @@
-import React, { useEffect, useState, useRef } from 'react'
-import { portfolioAPI, analyticsAPI, plannerAPI } from '../lib/api'
+import React, { useEffect, useState, useRef, useCallback } from 'react'
+import { portfolioAPI, analyticsAPI, plannerAPI, fundsAPI } from '../lib/api'
 import { Holding, DudFund, TaxSummary } from '../types'
 import { fmtINR, fmtPct, dudColor, colorForValue } from '../lib/utils'
-import { Upload, FileText, Lock, ChevronDown, ChevronUp, Download, AlertTriangle } from 'lucide-react'
+import { Upload, FileText, Lock, ChevronDown, ChevronUp, Download, AlertTriangle, Plus, X, Search, CheckCircle } from 'lucide-react'
+
+// ── Manual Add Fund types ──────────────────────────────────────────────
+interface FundSearchResult { scheme_code: number; scheme_name: string; category?: string }
+interface ManualForm {
+  fundQuery: string
+  selectedFund: FundSearchResult | null
+  investedAmount: string
+  investmentDate: string
+  investmentType: 'SIP' | 'LUMPSUM'
+}
+const emptyForm = (): ManualForm => ({
+  fundQuery: '',
+  selectedFund: null,
+  investedAmount: '',
+  investmentDate: new Date().toISOString().split('T')[0],
+  investmentType: 'SIP',
+})
 
 export default function PortfolioTab() {
   const [holdings, setHoldings] = useState<Holding[]>([])
@@ -17,6 +34,16 @@ export default function PortfolioTab() {
   const [casError, setCasError] = useState<string | null>(null)
   const [showTax, setShowTax] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── Manual Add Fund state ──────────────────────────────────────────
+  const [showManual, setShowManual] = useState(false)
+  const [manualForm, setManualForm] = useState<ManualForm>(emptyForm())
+  const [fundSuggestions, setFundSuggestions] = useState<FundSearchResult[]>([])
+  const [searchLoading, setSearchLoading] = useState(false)
+  const [manualLoading, setManualLoading] = useState(false)
+  const [manualError, setManualError] = useState<string | null>(null)
+  const [manualSuccess, setManualSuccess] = useState(false)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadHoldings = async () => {
     setLoading(true)
@@ -43,6 +70,67 @@ export default function PortfolioTab() {
   }
 
   useEffect(() => { loadHoldings() }, [])
+
+  // ── Fund search with debounce ──────────────────────────────────────
+  const searchFunds = useCallback((q: string) => {
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    if (!q || q.length < 2) { setFundSuggestions([]); return }
+    searchTimer.current = setTimeout(async () => {
+      setSearchLoading(true)
+      try {
+        const { data } = await fundsAPI.search(q)
+        setFundSuggestions(Array.isArray(data) ? data.slice(0, 8) : [])
+      } catch { setFundSuggestions([]) }
+      finally { setSearchLoading(false) }
+    }, 300)
+  }, [])
+
+  const handleFundQueryChange = (q: string) => {
+    setManualForm((f) => ({ ...f, fundQuery: q, selectedFund: null }))
+    searchFunds(q)
+  }
+
+  const selectFund = (fund: FundSearchResult) => {
+    setManualForm((f) => ({ ...f, selectedFund: fund, fundQuery: fund.scheme_name }))
+    setFundSuggestions([])
+  }
+
+  const handleManualSubmit = async () => {
+    setManualError(null)
+    if (!manualForm.selectedFund) return setManualError('Please search and select a fund.')
+    const amount = parseFloat(manualForm.investedAmount)
+    if (!amount || amount <= 0) return setManualError('Enter a valid invested amount.')
+
+    // Fetch latest NAV to compute units
+    setManualLoading(true)
+    try {
+      const { data: navData } = await fundsAPI.latestNav(manualForm.selectedFund.scheme_code)
+      const nav = navData?.nav || navData?.latest_nav || 10
+      const units = amount / nav
+
+      await portfolioAPI.addHolding({
+        scheme_code: manualForm.selectedFund.scheme_code,
+        scheme_name: manualForm.selectedFund.scheme_name,
+        units,
+        avg_nav: nav,
+        investment_type: manualForm.investmentType,
+        category: manualForm.selectedFund.category || 'Equity',
+      })
+
+      setManualSuccess(true)
+      setTimeout(() => {
+        setManualSuccess(false)
+        setShowManual(false)
+        setManualForm(emptyForm())
+        setFundSuggestions([])
+        loadHoldings()
+      }, 1500)
+    } catch (err: any) {
+      setManualError(err.response?.data?.detail || 'Failed to add fund. Try again.')
+    } finally {
+      setManualLoading(false)
+    }
+  }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -111,6 +199,128 @@ export default function PortfolioTab() {
         <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
         {casError && (
           <p className="text-red-400 text-xs mt-2 bg-red-900/20 rounded-lg px-3 py-2">{casError}</p>
+        )}
+      </div>
+
+      {/* ── Add Fund Manually ─────────────────────── */}
+      <div className="card">
+        <button
+          onClick={() => { setShowManual((p) => !p); setManualError(null); setManualSuccess(false) }}
+          className="flex items-center justify-between w-full"
+        >
+          <span className="section-title mb-0 flex items-center gap-2">
+            <Plus className="w-4 h-4 text-indigo-400" /> Add Fund Manually
+          </span>
+          {showManual
+            ? <X className="w-4 h-4 text-slate-400" />
+            : <ChevronDown className="w-4 h-4 text-slate-400" />}
+        </button>
+
+        {showManual && (
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-slate-500">
+              Log a fund investment without a CAS PDF. NAV is auto-fetched to calculate your units.
+            </p>
+
+            {/* Fund Search */}
+            <div className="relative">
+              <label className="text-xs text-slate-400 mb-1 block">Fund Name</label>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  className="input pl-9"
+                  placeholder="Search fund (e.g. Nippon Small Cap)…"
+                  value={manualForm.fundQuery}
+                  onChange={(e) => handleFundQueryChange(e.target.value)}
+                />
+                {searchLoading && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 animate-pulse">
+                    searching…
+                  </span>
+                )}
+              </div>
+              {/* Dropdown */}
+              {fundSuggestions.length > 0 && (
+                <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl max-h-56 overflow-y-auto">
+                  {fundSuggestions.map((f) => (
+                    <button
+                      key={f.scheme_code}
+                      onMouseDown={() => selectFund(f)}
+                      className="w-full text-left px-3 py-2.5 hover:bg-slate-700 transition-colors border-b border-slate-700/50 last:border-0"
+                    >
+                      <p className="text-sm text-slate-200 leading-tight">{f.scheme_name}</p>
+                      {f.category && <p className="text-xs text-slate-500 mt-0.5">{f.category}</p>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Selected fund badge */}
+            {manualForm.selectedFund && (
+              <div className="flex items-center gap-2 bg-indigo-900/30 border border-indigo-700/50 rounded-lg px-3 py-2">
+                <CheckCircle className="w-4 h-4 text-indigo-400 shrink-0" />
+                <p className="text-xs text-indigo-300 font-medium truncate">{manualForm.selectedFund.scheme_name}</p>
+              </div>
+            )}
+
+            {/* Amount */}
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Invested Amount (₹)</label>
+              <input
+                className="input"
+                type="number"
+                placeholder="e.g. 5000"
+                value={manualForm.investedAmount}
+                onChange={(e) => setManualForm((f) => ({ ...f, investedAmount: e.target.value }))}
+                min={1}
+              />
+            </div>
+
+            {/* Investment Type */}
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block">Investment Type</label>
+              <div className="flex gap-2">
+                {(['SIP', 'LUMPSUM'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setManualForm((f) => ({ ...f, investmentType: t }))}
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${
+                      manualForm.investmentType === t
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {t === 'SIP' ? '📅 SIP' : '💰 Lumpsum'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Error / Success */}
+            {manualError && (
+              <p className="text-red-400 text-xs bg-red-900/20 rounded-lg px-3 py-2">{manualError}</p>
+            )}
+            {manualSuccess && (
+              <p className="text-green-400 text-xs bg-green-900/20 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5" /> Fund added! Refreshing portfolio…
+              </p>
+            )}
+
+            {/* Submit */}
+            <button
+              onClick={handleManualSubmit}
+              disabled={manualLoading || manualSuccess}
+              className="btn-primary w-full flex items-center justify-center gap-2"
+            >
+              {manualLoading
+                ? 'Adding…'
+                : manualSuccess
+                ? '✓ Added!'
+                : <><Plus className="w-4 h-4" /> Add to Portfolio</>
+              }
+            </button>
+          </div>
         )}
       </div>
 
@@ -276,9 +486,10 @@ export default function PortfolioTab() {
       )}
 
       {holdings.length === 0 && !loading && (
-        <div className="text-center py-12 text-slate-500">
+        <div className="text-center py-10 text-slate-500">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">Upload your CAS PDF to see your holdings</p>
+          <p className="text-sm mb-1">No holdings yet</p>
+          <p className="text-xs text-slate-600">Upload your CAS PDF above, or use <strong className="text-slate-400">Add Fund Manually</strong> to log funds one by one.</p>
         </div>
       )}
     </div>
