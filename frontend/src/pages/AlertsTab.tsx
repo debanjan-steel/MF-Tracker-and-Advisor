@@ -50,7 +50,7 @@ export default function AlertsTab() {
   const sendTest = async () => {
     setTestSent('idle')
     try {
-      await alertsAPI.sendTest()
+      await alertsAPI.sendTest(settings.whatsapp_number, 'entry')
       setTestSent('ok')
     } catch {
       setTestSent('err')

@@ -115,6 +115,7 @@ export const portfolioAPI = {
 export const alertsAPI = {
   getSettings: () => api.get('/alerts/settings'),
   saveSettings: (data: object) => api.post('/alerts/settings', data),
-  sendTest: () => api.post('/alerts/test'),
+  sendTest: (phoneNumber?: string, alertType?: string) =>
+    api.post('/alerts/test', { phone_number: phoneNumber, alert_type: alertType || 'entry' }),
   history: () => api.get('/alerts/history'),
 }

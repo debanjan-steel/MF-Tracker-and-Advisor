@@ -32,7 +32,7 @@ class AlertSettings(BaseModel):
 
 
 class TestAlertRequest(BaseModel):
-    phone_number: str
+    phone_number: Optional[str] = None
     alert_type: str = "entry"  # "entry" | "macro" | "sip" | "dud"
 
 
@@ -63,11 +63,12 @@ def update_alert_settings(settings: AlertSettings, user: dict = Depends(get_curr
 @router.post("/test", summary="Send a test WhatsApp notification")
 def send_test_alert(req: TestAlertRequest, user: dict = Depends(get_current_user)):
     """Trigger a sample WhatsApp alert to verify setup."""
+    target_phone = req.phone_number or os.getenv("DEFAULT_WHATSAPP_TO", "+919876543210")
     if req.alert_type == "entry":
         msg = format_opportunity_alert(
-            scheme_name="Parag Parikh Flexi Cap Fund",
+            scheme_name="Nippon India Small Cap Fund",
             timing_score=78.5,
-            current_nav=81.25,
+            current_nav=226.14,
             recommended_action="Increase monthly SIP by 1.5x or deploy 1st tranche of lump sum.",
         )
     elif req.alert_type == "macro":
@@ -96,7 +97,7 @@ def send_test_alert(req: TestAlertRequest, user: dict = Depends(get_current_user
     else:
         msg = f"🔔 Test alert from Indian MF Analytics Platform for {user.get('email', 'User')}."
 
-    result = send_whatsapp_message(req.phone_number, msg)
+    result = send_whatsapp_message(target_phone, msg)
     return {
         "success": result.get("status") in ["sent", "mocked"],
         "details": result,
