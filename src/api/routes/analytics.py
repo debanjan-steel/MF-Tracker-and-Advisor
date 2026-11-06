@@ -157,6 +157,10 @@ def backtest(
     """
     import pandas as pd
     nav = _get_nav_or_404(scheme_code)
+    from src.data.storage import get_scheme
+    meta = get_scheme(scheme_code) or {}
+    scheme_name = meta.get("scheme_name", f"Scheme {scheme_code}")
+    category = meta.get("scheme_category", "Equity")
     nav_slice = nav[nav.index >= nav.index[-1] - pd.DateOffset(years=years)]
 
     static = simulate_static_sip(nav_slice, monthly_amount=monthly_amount)
@@ -165,6 +169,8 @@ def backtest(
 
     return {
         "scheme_code": scheme_code,
+        "scheme_name": scheme_name,
+        "category": category,
         "years_backtested": years,
         "monthly_amount": monthly_amount,
         "static_sip": {
@@ -184,6 +190,14 @@ def backtest(
             "sharpe": dynamic.sharpe,
         },
         "comparison": comparison,
+        "static_xirr": static.xirr,
+        "dynamic_xirr": dynamic.xirr,
+        "static_final_value": static.final_corpus,
+        "dynamic_final_value": dynamic.final_corpus,
+        "total_invested": static.total_invested,
+        "extra_gain": comparison.get("extra_gain", 0),
+        "cagr_delta": comparison.get("cagr_delta", 0),
+        "verdict": comparison.get("verdict", ""),
     }
 
 

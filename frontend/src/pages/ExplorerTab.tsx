@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { fundsAPI, analyticsAPI } from '../lib/api'
 import { SchemeInfo, Scorecard, Thermometer } from '../types'
-import { fmtPct, fmt, thermometerColor, signalColor } from '../lib/utils'
+import { fmtPct, fmt, fmtINR, thermometerColor, signalColor } from '../lib/utils'
 import {
   Search, TrendingUp, Thermometer as ThermIcon, BarChart2, Star, Trash2,
   ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Sparkles
@@ -54,6 +54,14 @@ export default function ExplorerTab() {
   const [watchlistThermos, setWatchlistThermos] = useState<FundThermometer[]>([])
   const [thermoLoading, setThermoLoading] = useState(false)
   const [backtestData, setBacktestData] = useState<any>(null)
+  const [btMonthly, setBtMonthly] = useState<number>(5000)
+  const [btYears, setBtYears] = useState<number>(5)
+  const [btLoading, setBtLoading] = useState<boolean>(false)
+  const [btSelectedFund, setBtSelectedFund] = useState<{ scheme_code: number; scheme_name: string; category?: string } | null>(null)
+  const [btSearchQuery, setBtSearchQuery] = useState('')
+  const [btSuggestions, setBtSuggestions] = useState<SchemeInfo[]>([])
+  const [btSearching, setBtSearching] = useState(false)
+  const btSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [searching, setSearching] = useState(false)
   const [loadingFund, setLoadingFund] = useState(false)
 
@@ -249,6 +257,80 @@ export default function ExplorerTab() {
       loadThermometer()
     }
   }, [activeSection, watchlist])
+
+  const runBacktest = useCallback(async (code: number, monthly: number, years: number) => {
+    setBtLoading(true)
+    try {
+      const { data } = await analyticsAPI.backtest(code, monthly, years)
+      setBacktestData(data)
+    } catch (e) {
+      console.error('Backtest error:', e)
+    } finally {
+      setBtLoading(false)
+    }
+  }, [])
+
+  const handleBtSearchChange = (val: string) => {
+    setBtSearchQuery(val)
+    if (btSearchTimer.current) clearTimeout(btSearchTimer.current)
+    if (val.length >= 2) {
+      btSearchTimer.current = setTimeout(async () => {
+        setBtSearching(true)
+        try {
+          const { data } = await fundsAPI.search(val)
+          const raw = data?.results || (Array.isArray(data) ? data : [])
+          setBtSuggestions(raw.slice(0, 8))
+        } catch {
+          setBtSuggestions([])
+        } finally {
+          setBtSearching(false)
+        }
+      }, 300)
+    } else {
+      setBtSuggestions([])
+    }
+  }
+
+  const selectBtFund = (fund: any) => {
+    const code = Number(fund.scheme_code || fund.schemeCode)
+    const name = fund.scheme_name || fund.schemeName || `Scheme ${code}`
+    const cat = fund.scheme_category || fund.category || 'Equity'
+    const chosen = { scheme_code: code, scheme_name: name, category: cat }
+    setBtSelectedFund(chosen)
+    setBtSearchQuery('')
+    setBtSuggestions([])
+    runBacktest(code, btMonthly, btYears)
+  }
+
+  useEffect(() => {
+    if (activeSection === 'backtest') {
+      let targetCode: number | null = null
+      let targetFund: any = null
+
+      if (btSelectedFund) {
+        targetCode = btSelectedFund.scheme_code
+        targetFund = btSelectedFund
+      } else if (watchlist.length > 0) {
+        targetCode = watchlist[0].scheme_code
+        targetFund = watchlist[0]
+      } else if (selected) {
+        targetCode = selected.scheme_code
+        targetFund = selected
+      } else {
+        targetCode = 118989
+        targetFund = { scheme_code: 118989, scheme_name: 'Nippon India Small Cap Fund', scheme_category: 'Small Cap' }
+      }
+
+      if (targetCode) {
+        setBtSelectedFund({
+          scheme_code: targetCode,
+          scheme_name: targetFund.scheme_name,
+          category: targetFund.scheme_category || targetFund.category || 'Equity',
+        })
+        runBacktest(targetCode, btMonthly, btYears)
+      }
+    }
+  }, [activeSection, btMonthly, btYears, watchlist.length])
 
   return (
     <div className="space-y-4 pb-6">
@@ -796,24 +878,284 @@ export default function ExplorerTab() {
 
       {/* ── Backtest ──────────────────────────────── */}
       {activeSection === 'backtest' && (
-        <div className="card">
-          <p className="section-title">SIP Backtest (₹5,000/mo · 5 Yrs)</p>
-          {backtestData ? (
-            <div className="space-y-2">
-              <div className="grid grid-cols-2 gap-2">
-                <MetricBox label="Static SIP XIRR" value={fmtPct(backtestData.static_xirr)} color="text-indigo-400" />
-                <MetricBox label="Dynamic SIP XIRR" value={fmtPct(backtestData.dynamic_xirr)} color="text-green-400" />
-                <MetricBox label="Static Final" value={backtestData.static_final_value?.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
-                <MetricBox label="Dynamic Final" value={backtestData.dynamic_final_value?.toLocaleString('en-IN', { maximumFractionDigits: 0 })} />
+        <div className="space-y-3">
+          {/* Controls Card */}
+          <div className="card">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="section-title mb-0 flex items-center gap-2">
+                  <BarChart2 className="w-4 h-4 text-indigo-400" />
+                  SIP Strategy Backtester
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Historical simulation: Traditional Static SIP vs Antigravity Dynamic AI Timing SIP.
+                </p>
               </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Select a fund in the Search tab first, then switch here to see its backtest.
+              {btSelectedFund && (
+                <button
+                  type="button"
+                  onClick={() => runBacktest(btSelectedFund.scheme_code, btMonthly, btYears)}
+                  disabled={btLoading}
+                  className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 py-1.5 px-3 rounded-lg bg-slate-800 border border-slate-700 transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${btLoading ? 'animate-spin' : ''}`} />
+                  {btLoading ? 'Simulating…' : 'Re-run'}
+                </button>
+              )}
+            </div>
+
+            {/* Quick Watchlist Fund Selector */}
+            <div className="mt-3">
+              <label className="text-xs text-slate-400 font-medium block mb-1.5 flex items-center gap-1">
+                <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> Select Fund to Backtest:
+              </label>
+
+              {watchlist.length > 0 && (
+                <div className="flex gap-1.5 overflow-x-auto pb-1 mb-2.5">
+                  {watchlist.map((w) => {
+                    const isSelected = btSelectedFund?.scheme_code === w.scheme_code
+                    return (
+                      <button
+                        key={w.scheme_code}
+                        type="button"
+                        onClick={() => selectBtFund(w)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all shrink-0 flex items-center gap-1.5 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/30'
+                            : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600'
+                        }`}
+                      >
+                        <Star className={`w-3 h-3 ${isSelected ? 'fill-white text-white' : 'fill-amber-400 text-amber-400'}`} />
+                        <span className="truncate max-w-[180px]">{w.scheme_name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              {/* In-tab Search input */}
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                <input
+                  className="input pl-9 text-xs"
+                  placeholder="Or search any other mutual fund to backtest…"
+                  value={btSearchQuery}
+                  onChange={(e) => handleBtSearchChange(e.target.value)}
+                />
+                {btSearching && (
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 animate-pulse">
+                    searching…
+                  </span>
+                )}
+                {/* Search Dropdown */}
+                {btSuggestions.length > 0 && (
+                  <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-2xl max-h-52 overflow-y-auto">
+                    {btSuggestions.map((f: any) => {
+                      const code = Number(f.scheme_code || f.schemeCode)
+                      const name = f.scheme_name || f.schemeName
+                      return (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={() => selectBtFund(f)}
+                          className="w-full text-left px-3 py-2 hover:bg-slate-700 border-b border-slate-700/50 last:border-0"
+                        >
+                          <p className="text-xs font-medium text-slate-200 truncate">{name}</p>
+                          <p className="text-[10px] text-slate-400">{f.scheme_category || f.fund_house || 'Equity'}</p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Simulation Parameters */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-800">
+              {/* Monthly Amount */}
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">
+                  Monthly SIP Amount (₹)
+                </label>
+                <div className="flex gap-1.5">
+                  {[2500, 5000, 10000, 25000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => {
+                        setBtMonthly(amt)
+                        if (btSelectedFund) runBacktest(btSelectedFund.scheme_code, amt, btYears)
+                      }}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        btMonthly === amt
+                          ? 'bg-indigo-600 text-white border-indigo-500'
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      ₹{(amt / 1000).toFixed(0)}k
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Time Horizon */}
+              <div>
+                <label className="text-xs text-slate-400 font-medium block mb-1">
+                  Backtest Duration
+                </label>
+                <div className="flex gap-1.5">
+                  {[1, 3, 5, 10].map((yr) => (
+                    <button
+                      key={yr}
+                      type="button"
+                      onClick={() => {
+                        setBtYears(yr)
+                        if (btSelectedFund) runBacktest(btSelectedFund.scheme_code, btMonthly, yr)
+                      }}
+                      className={`flex-1 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
+                        btYears === yr
+                          ? 'bg-indigo-600 text-white border-indigo-500'
+                          : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-200'
+                      }`}
+                    >
+                      {yr} Year{yr > 1 ? 's' : ''}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Results Display */}
+          {btLoading ? (
+            <div className="card text-center py-12">
+              <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin mx-auto mb-3" />
+              <p className="text-sm font-semibold text-slate-300">Simulating SIP strategies…</p>
+              <p className="text-xs text-slate-500 mt-1">
+                Testing {btYears} years of monthly cash flows against 200-day EMA market signals.
               </p>
             </div>
+          ) : backtestData ? (
+            <div className="space-y-3">
+              {/* Fund Title & Overall Invested */}
+              <div className="card bg-slate-900 border-slate-800">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300 border border-slate-700">
+                      {backtestData.category || btSelectedFund?.category || 'Equity'}
+                    </span>
+                    <h3 className="text-base font-bold text-white mt-1">
+                      {backtestData.scheme_name || btSelectedFund?.scheme_name}
+                    </h3>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      Backtested over <strong>{backtestData.years_backtested || btYears} Years</strong> at <strong>₹{(backtestData.monthly_amount || btMonthly).toLocaleString('en-IN')}/month</strong>
+                    </p>
+                  </div>
+                  <div className="text-right shrink-0 bg-slate-800/80 px-3 py-2 rounded-xl border border-slate-700">
+                    <span className="text-[11px] text-slate-400 block">Total Invested</span>
+                    <span className="text-sm font-bold text-white font-mono">
+                      {fmtINR(backtestData.total_invested || (backtestData.static_sip?.total_invested) || ((backtestData.monthly_amount || btMonthly) * 12 * btYears))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Side-by-Side Strategy Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Static Regular SIP */}
+                <div className="card bg-slate-900/90 border-slate-800">
+                  <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-800">
+                    <span className="text-xs font-bold text-slate-300">1. Traditional Static SIP</span>
+                    <span className="text-[10px] text-slate-400 px-2 py-0.5 rounded bg-slate-800">Fixed 1st of month</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-slate-400">Final Corpus:</span>
+                      <span className="text-base font-bold text-slate-100 font-mono">
+                        {fmtINR(backtestData.static_final_value || backtestData.static_sip?.final_corpus || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-slate-400">Annualized XIRR:</span>
+                      <span className="text-sm font-bold text-indigo-400 font-mono">
+                        {fmtPct((backtestData.static_xirr || backtestData.static_sip?.xirr || 0) * 100)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-slate-400">Total Profit:</span>
+                      <span className="text-sm font-bold text-emerald-400 font-mono">
+                        +{fmtINR((backtestData.static_final_value || backtestData.static_sip?.final_corpus || 0) - (backtestData.total_invested || backtestData.static_sip?.total_invested || 0))}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Dynamic Smart SIP */}
+                <div className="card bg-indigo-950/30 border-indigo-700/50 relative overflow-hidden">
+                  <div className="flex items-center justify-between mb-2 pb-2 border-b border-indigo-800/50">
+                    <span className="text-xs font-bold text-indigo-300 flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5 text-yellow-400" /> 2. Dynamic Timing SIP
+                    </span>
+                    <span className="text-[10px] text-indigo-300 px-2 py-0.5 rounded bg-indigo-900/60 font-semibold">
+                      Antigravity AI Timing
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-slate-400">Final Corpus:</span>
+                      <span className="text-base font-bold text-emerald-400 font-mono">
+                        {fmtINR(backtestData.dynamic_final_value || backtestData.dynamic_sip?.final_corpus || 0)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-slate-400">Annualized XIRR:</span>
+                      <span className="text-sm font-bold text-emerald-400 font-mono">
+                        {fmtPct((backtestData.dynamic_xirr || backtestData.dynamic_sip?.xirr || 0) * 100)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-xs text-slate-400">Total Profit:</span>
+                      <span className="text-sm font-bold text-emerald-400 font-mono">
+                        +{fmtINR((backtestData.dynamic_final_value || backtestData.dynamic_sip?.final_corpus || 0) - (backtestData.total_invested || backtestData.dynamic_sip?.total_invested || 0))}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Verdict Card */}
+              <div className="card bg-slate-900 border-slate-700 p-4">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" /> Strategy Verdict & Analysis
+                </h4>
+                <p className="text-sm text-slate-200 leading-relaxed font-medium">
+                  {backtestData.verdict || backtestData.comparison?.verdict || 'Simulation complete.'}
+                </p>
+
+                {/* Extra Return Highlight */}
+                {backtestData.extra_gain !== undefined && (
+                  <div className="mt-3 pt-3 border-t border-slate-800 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">Net Wealth Difference:</span>
+                    <span className={`font-bold font-mono text-sm ${backtestData.extra_gain >= 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                      {backtestData.extra_gain >= 0 ? `+${fmtINR(backtestData.extra_gain)} Extra Corpus` : `${fmtINR(backtestData.extra_gain)} Difference`}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Educational How it Works */}
+              <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 text-xs text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-300">How Dynamic SIP Timing Works:</p>
+                <p>• <strong>Deep Dips (&lt; -15% of 200 EMA):</strong> Deploys 2.0× SIP to buy aggressively at deep market discounts.</p>
+                <p>• <strong>Normal Range (±5% of 200 EMA):</strong> Deploys normal 1.0× monthly budget.</p>
+                <p>• <strong>Overheated (&gt; +15% of 200 EMA):</strong> Deploys 0.5× and preserves dry powder cash for the next market dip.</p>
+              </div>
+            </div>
           ) : (
-            <p className="text-slate-500 text-sm text-center py-6">
-              Search &amp; select a fund first.
-            </p>
+            <div className="card text-center py-10 text-slate-500">
+              <BarChart2 className="w-10 h-10 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-semibold text-slate-400">Select a mutual fund above to run the backtest</p>
+            </div>
           )}
         </div>
       )}
