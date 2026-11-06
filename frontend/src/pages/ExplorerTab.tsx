@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef } from 'react'
 import { fundsAPI, analyticsAPI } from '../lib/api'
 import { SchemeInfo, Scorecard, Thermometer } from '../types'
 import { fmtPct, fmt, thermometerColor, signalColor } from '../lib/utils'
-import { Search, TrendingUp, Thermometer as ThermIcon, BarChart2, Star, Trash2 } from 'lucide-react'
+import { Search, TrendingUp, Thermometer as ThermIcon, BarChart2, Star, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import {
   LineChart,
@@ -75,6 +75,46 @@ export default function ExplorerTab() {
       }, 300)
     } else {
       setWlSuggestions([])
+    }
+  }
+
+  // ── Watchlist inline expansion state ──────────────────────────────
+  const [expandedWlCode, setExpandedWlCode] = useState<number | null>(null)
+  const [wlScorecard, setWlScorecard] = useState<Scorecard | null>(null)
+  const [wlNavData, setWlNavData] = useState<any[]>([])
+  const [wlLoadingFund, setWlLoadingFund] = useState(false)
+
+  const toggleExpandWatchlist = async (w: any) => {
+    const code = Number(w.scheme_code || w.schemeCode)
+    if (expandedWlCode === code) {
+      setExpandedWlCode(null)
+      setWlScorecard(null)
+      setWlNavData([])
+      return
+    }
+
+    setExpandedWlCode(code)
+    setWlScorecard(null)
+    setWlNavData([])
+    setWlLoadingFund(true)
+    try {
+      const [sc, nav] = await Promise.allSettled([
+        analyticsAPI.scorecard(code),
+        fundsAPI.navHistory(code, 1.0),
+      ])
+      if (sc.status === 'fulfilled') setWlScorecard(sc.value.data)
+      if (nav.status === 'fulfilled') {
+        const raw = nav.value.data?.nav_history || nav.value.data?.nav_records || []
+        let ema = 0
+        const k = 2 / (200 + 1)
+        const chart = raw.map((r: any, i: number) => {
+          ema = i === 0 ? r.nav : r.nav * k + ema * (1 - k)
+          return { date: (r.date || '').slice(0, 7), nav: r.nav, ema200: +ema.toFixed(2) }
+        })
+        setWlNavData(chart)
+      }
+    } finally {
+      setWlLoadingFund(false)
     }
   }
 
@@ -399,19 +439,21 @@ export default function ExplorerTab() {
               </p>
             </div>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {watchlist.map((w) => {
-                const isCurrent = selected?.scheme_code === w.scheme_code
+                const isExpanded = expandedWlCode === w.scheme_code
                 return (
                   <div
                     key={w.scheme_code}
-                    className={`card p-3 transition-all border ${
-                      isCurrent ? 'border-indigo-500 bg-slate-800' : 'border-slate-700/60 bg-slate-800 hover:border-slate-600'
+                    className={`card p-3.5 transition-all border ${
+                      isExpanded
+                        ? 'border-indigo-500 bg-slate-800 ring-1 ring-indigo-500/30'
+                        : 'border-slate-700/60 bg-slate-800 hover:border-slate-600'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div
-                        onClick={() => selectFund(w)}
+                        onClick={() => toggleExpandWatchlist(w)}
                         className="flex-1 cursor-pointer min-w-0"
                       >
                         <p className="text-sm font-semibold text-slate-100 leading-snug hover:text-indigo-300 transition-colors">
@@ -423,127 +465,101 @@ export default function ExplorerTab() {
                           </p>
                         )}
                         <p className="text-[11px] text-indigo-400 mt-1 font-medium flex items-center gap-1">
-                          Tap to view Scorecard &amp; 200 EMA
+                          {isExpanded ? '▲ Tap to collapse' : '▼ Tap to view Scorecard & 200 EMA'}
                         </p>
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
-                          onClick={() => selectFund(w)}
-                          title="View analytics"
-                          className="rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 transition-all text-xs font-medium px-2.5 py-1.5 flex items-center gap-1"
+                          onClick={() => toggleExpandWatchlist(w)}
+                          title={isExpanded ? 'Hide details' : 'View scorecard & chart'}
+                          className={`rounded-lg border text-xs font-semibold px-2.5 py-1.5 flex items-center gap-1 transition-all ${
+                            isExpanded
+                              ? 'bg-indigo-600 border-indigo-500 text-white'
+                              : 'bg-indigo-600/20 border-indigo-500/30 text-indigo-300 hover:bg-indigo-600 hover:text-white'
+                          }`}
                         >
-                          View
+                          {isExpanded ? (
+                            <>Hide <ChevronUp className="w-3.5 h-3.5" /></>
+                          ) : (
+                            <>View <ChevronDown className="w-3.5 h-3.5" /></>
+                          )}
                         </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             removeFromWatchlist(w.scheme_code)
-                            if (selected?.scheme_code === w.scheme_code) {
-                              setScorecard(null)
-                              setSelected(null)
-                              setNavData([])
+                            if (expandedWlCode === w.scheme_code) {
+                              setExpandedWlCode(null)
+                              setWlScorecard(null)
+                              setWlNavData([])
                             }
                           }}
                           title="Remove from watchlist"
-                          className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/30 transition-colors"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
                     </div>
+
+                    {/* Inline Expandable Scorecard & NAV Chart just under THIS exact fund */}
+                    {isExpanded && (
+                      <div className="mt-3.5 pt-3.5 border-t border-slate-700/80 space-y-3">
+                        {wlLoadingFund && (
+                          <div className="text-center py-6">
+                            <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                            <p className="text-xs text-slate-400">Loading Scorecard &amp; 200-Day EMA…</p>
+                          </div>
+                        )}
+
+                        {wlScorecard && !wlLoadingFund && (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-3 gap-2">
+                              <MetricBox label="CAGR 1Y" value={fmtPct(wlScorecard.cagr_1y)} color={wlScorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
+                              <MetricBox label="CAGR 3Y" value={fmtPct(wlScorecard.cagr_3y)} color={wlScorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
+                              <MetricBox label="CAGR 5Y" value={fmtPct(wlScorecard.cagr_5y)} color={wlScorecard.cagr_5y > 0 ? 'text-green-400' : 'text-red-400'} />
+                              <MetricBox label="Sharpe" value={fmt(wlScorecard.sharpe)} />
+                              <MetricBox label="Max DD" value={fmtPct(wlScorecard.max_drawdown)} color="text-red-400" />
+                              <MetricBox label="Alpha" value={fmtPct(wlScorecard.alpha)} color={wlScorecard.alpha > 0 ? 'text-green-400' : 'text-red-400'} />
+                              <MetricBox label="Beta" value={fmt(wlScorecard.beta)} />
+                              <MetricBox label="Up Cap" value={fmtPct(wlScorecard.up_capture)} color="text-green-400" />
+                              <MetricBox label="Dn Cap" value={fmtPct(wlScorecard.down_capture)} color="text-red-400" />
+                            </div>
+                            <div className="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-2.5">
+                              <span className="text-slate-400 text-xs">Overall Grade</span>
+                              <span className={`text-xl font-black ${(wlScorecard.overall_score ?? 60) > 65 ? 'text-green-400' : (wlScorecard.overall_score ?? 60) > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                                {wlScorecard.grade || 'A'}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {wlNavData.length > 0 && !wlLoadingFund && (
+                          <div className="bg-slate-900/90 rounded-xl p-3 border border-slate-700/60">
+                            <p className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-2">
+                              <TrendingUp className="w-3.5 h-3.5 text-indigo-400" /> NAV + 200-Day EMA
+                            </p>
+                            <ResponsiveContainer width="100%" height={180}>
+                              <LineChart data={wlNavData.slice(-60)}>
+                                <XAxis dataKey="date" tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} />
+                                <YAxis tick={{ fontSize: 9, fill: '#64748b' }} tickLine={false} axisLine={false} width={35} />
+                                <Tooltip
+                                  contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8, fontSize: 11 }}
+                                  labelStyle={{ color: '#94a3b8', fontSize: 11 }}
+                                  itemStyle={{ fontSize: 11 }}
+                                />
+                                <Line type="monotone" dataKey="nav" stroke="#6366f1" dot={false} strokeWidth={2} name="NAV" />
+                                <Line type="monotone" dataKey="ema200" stroke="#f59e0b" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="200 EMA" />
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )
               })}
-            </div>
-          )}
-
-          {/* Loading Fund Details in Watchlist */}
-          {loadingFund && (
-            <div className="card text-center py-8">
-              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-sm text-slate-300 font-medium">Fetching Fund NAV History &amp; Analytics…</p>
-              <p className="text-xs text-slate-500 mt-1">Downloading historical records from MFAPI &amp; computing scorecard</p>
-            </div>
-          )}
-
-          {/* Render selected fund's Scorecard & NAV Chart right inside Watchlist tab */}
-          {scorecard && selected && (
-            <div className="space-y-4 pt-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
-                  Fund Analytics &amp; Scorecard
-                </span>
-                <button
-                  onClick={() => { setScorecard(null); setSelected(null); setNavData([]) }}
-                  className="text-xs text-slate-400 hover:text-slate-200"
-                >
-                  Close Analytics ✕
-                </button>
-              </div>
-
-              {/* Scorecard */}
-              <div className="card">
-                <div className="flex items-start justify-between gap-3 mb-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-base font-bold text-slate-100 leading-tight">
-                      {selected.scheme_name || scorecard.scheme_name}
-                    </p>
-                    {(selected.fund_house || selected.scheme_category) && (
-                      <p className="text-xs text-slate-400 mt-1">
-                        {[selected.fund_house, selected.scheme_category].filter(Boolean).join(' · ')}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => toggleWatchlist(selected)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 border bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-400 transition-all"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    Remove
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mb-3">
-                  <MetricBox label="CAGR 1Y" value={fmtPct(scorecard.cagr_1y)} color={scorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
-                  <MetricBox label="CAGR 3Y" value={fmtPct(scorecard.cagr_3y)} color={scorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
-                  <MetricBox label="CAGR 5Y" value={fmtPct(scorecard.cagr_5y)} color={scorecard.cagr_5y > 0 ? 'text-green-400' : 'text-red-400'} />
-                  <MetricBox label="Sharpe" value={fmt(scorecard.sharpe)} />
-                  <MetricBox label="Max DD" value={fmtPct(scorecard.max_drawdown)} color="text-red-400" />
-                  <MetricBox label="Alpha" value={fmtPct(scorecard.alpha)} color={scorecard.alpha > 0 ? 'text-green-400' : 'text-red-400'} />
-                  <MetricBox label="Beta" value={fmt(scorecard.beta)} />
-                  <MetricBox label="Up Cap" value={fmtPct(scorecard.up_capture)} color="text-green-400" />
-                  <MetricBox label="Dn Cap" value={fmtPct(scorecard.down_capture)} color="text-red-400" />
-                </div>
-                <div className="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-3">
-                  <span className="text-slate-400 text-sm">Overall Grade</span>
-                  <span className={`text-2xl font-black ${(scorecard.overall_score ?? 60) > 65 ? 'text-green-400' : (scorecard.overall_score ?? 60) > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                    {scorecard.grade || 'A'}
-                  </span>
-                </div>
-              </div>
-
-              {/* NAV Chart */}
-              {navData.length > 0 && (
-                <div className="card">
-                  <p className="section-title flex items-center gap-2">
-                    <TrendingUp className="w-4 h-4 text-indigo-400" /> NAV + 200-Day EMA
-                  </p>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={navData.slice(-60)}>
-                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
-                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} width={40} />
-                      <Tooltip
-                        contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
-                        labelStyle={{ color: '#94a3b8', fontSize: 11 }}
-                        itemStyle={{ fontSize: 12 }}
-                      />
-                      <Line type="monotone" dataKey="nav" stroke="#6366f1" dot={false} strokeWidth={2} name="NAV" />
-                      <Line type="monotone" dataKey="ema200" stroke="#f59e0b" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="200 EMA" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
             </div>
           )}
         </div>
