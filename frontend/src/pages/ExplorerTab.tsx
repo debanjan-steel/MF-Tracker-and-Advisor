@@ -1,8 +1,11 @@
-import React, { useState, useCallback, useRef } from 'react'
+import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { fundsAPI, analyticsAPI } from '../lib/api'
 import { SchemeInfo, Scorecard, Thermometer } from '../types'
 import { fmtPct, fmt, thermometerColor, signalColor } from '../lib/utils'
-import { Search, TrendingUp, Thermometer as ThermIcon, BarChart2, Star, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import {
+  Search, TrendingUp, Thermometer as ThermIcon, BarChart2, Star, Trash2,
+  ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Sparkles
+} from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import {
   LineChart,
@@ -13,6 +16,23 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts'
+
+interface FundThermometer {
+  scheme_code: number
+  scheme_name: string
+  category: string
+  temperature: number
+  label: string
+  emoji: string
+  cagr_3y: number
+  cagr_3y_percentile: number
+  max_drawdown: number
+  in_recovery: boolean
+  recovery_pct: number
+  sip_recommendation: string
+  lumpsum_recommendation: string
+  rationale: string
+}
 
 export default function ExplorerTab() {
   const {
@@ -31,7 +51,8 @@ export default function ExplorerTab() {
   const [selected, setSelected] = useState<SchemeInfo | null>(null)
   const [scorecard, setScorecard] = useState<Scorecard | null>(null)
   const [navData, setNavData] = useState<any[]>([])
-  const [thermometer, setThermometer] = useState<Thermometer | null>(null)
+  const [watchlistThermos, setWatchlistThermos] = useState<FundThermometer[]>([])
+  const [thermoLoading, setThermoLoading] = useState(false)
   const [backtestData, setBacktestData] = useState<any>(null)
   const [searching, setSearching] = useState(false)
   const [loadingFund, setLoadingFund] = useState(false)
@@ -181,10 +202,53 @@ export default function ExplorerTab() {
   }
 
   const loadThermometer = async () => {
-    const { data } = await analyticsAPI.thermometer()
-    setThermometer(data)
-    setActiveSection('thermo')
+    setThermoLoading(true)
+    try {
+      const fundsToQuery: { scheme_code: number; scheme_name?: string; category?: string }[] = []
+
+      // 1. Watchlist mutual funds (primary focus)
+      if (watchlist && watchlist.length > 0) {
+        watchlist.forEach((w) => {
+          fundsToQuery.push({
+            scheme_code: w.scheme_code,
+            scheme_name: w.scheme_name,
+            category: w.scheme_category || 'Equity',
+          })
+        })
+      }
+
+      // 2. Also include currently selected fund if not already in list
+      if (selected && !fundsToQuery.some((f) => f.scheme_code === selected.scheme_code)) {
+        fundsToQuery.push({
+          scheme_code: selected.scheme_code,
+          scheme_name: selected.scheme_name,
+          category: selected.scheme_category || 'Equity',
+        })
+      }
+
+      // 3. Fallback benchmark funds if watchlist is empty
+      if (fundsToQuery.length === 0) {
+        fundsToQuery.push(
+          { scheme_code: 120716, scheme_name: 'Nippon India Large Cap Fund', category: 'Large Cap' },
+          { scheme_code: 127042, scheme_name: 'Motilal Oswal Midcap Fund', category: 'Mid Cap' },
+          { scheme_code: 118989, scheme_name: 'Nippon India Small Cap Fund', category: 'Small Cap' },
+        )
+      }
+
+      const res = await analyticsAPI.thermometerBatch(fundsToQuery)
+      setWatchlistThermos(res.data?.results || [])
+    } catch (e) {
+      console.error('Thermometer load failed:', e)
+    } finally {
+      setThermoLoading(false)
+    }
   }
+
+  useEffect(() => {
+    if (activeSection === 'thermo') {
+      loadThermometer()
+    }
+  }, [activeSection, watchlist])
 
   return (
     <div className="space-y-4 pb-6">
@@ -204,7 +268,6 @@ export default function ExplorerTab() {
             key={t.key}
             onClick={() => {
               setActiveSection(t.key as any)
-              if (t.key === 'thermo' && !thermometer) loadThermometer()
             }}
             className={`flex-1 flex items-center justify-center gap-1 py-2 rounded-lg text-xs font-medium transition-colors ${
               activeSection === t.key
@@ -567,28 +630,166 @@ export default function ExplorerTab() {
 
       {/* ── Category Thermometer ──────────────────── */}
       {activeSection === 'thermo' && (
-        <div className="card">
-          <p className="section-title">Category Valuation Thermometer</p>
-          {thermometer ? (
-            <div className="space-y-2">
-              {Object.entries(thermometer).map(([cat, info]) => (
-                <div
-                  key={cat}
-                  className={`flex items-center justify-between rounded-xl px-3 py-2.5 ${thermometerColor(info.status)}`}
+        <div className="space-y-3">
+          <div className="card">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <p className="section-title mb-0 flex items-center gap-2">
+                  <ThermIcon className="w-4 h-4 text-indigo-400" />
+                  {watchlist.length > 0
+                    ? `Watchlist Valuation Thermometer (${watchlist.length} Fund${watchlist.length > 1 ? 's' : ''})`
+                    : 'Category Valuation Thermometer'}
+                </p>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Live heat-map indicating whether your mutual funds are historically cheap (Bargain) or expensive (Bubble risk).
+                </p>
+              </div>
+              <button
+                onClick={loadThermometer}
+                disabled={thermoLoading}
+                className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 py-1.5 px-3 rounded-lg bg-slate-800 border border-slate-700 transition-colors"
+                title="Refresh temperatures"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${thermoLoading ? 'animate-spin' : ''}`} />
+                {thermoLoading ? 'Updating…' : 'Refresh'}
+              </button>
+            </div>
+
+            {watchlist.length === 0 && (
+              <div className="bg-amber-950/30 border border-amber-800/40 rounded-xl p-3 my-2 text-xs text-amber-300 flex items-center justify-between">
+                <span>⭐ You have 0 funds in your Watchlist. Showing benchmark funds below. Click <strong>+ Watch</strong> in Fund Search to add your favorite funds!</span>
+                <button
+                  onClick={() => setActiveSection('search')}
+                  className="px-2.5 py-1 rounded-lg bg-amber-600 text-white font-semibold text-[11px] shrink-0 ml-2"
                 >
-                  <div>
-                    <p className="text-sm font-semibold">{cat}</p>
-                    <p className="text-xs opacity-70">{info.recommendation}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs font-bold">{info.status}</p>
-                    <p className="text-xs opacity-60">Score: {info.score}</p>
-                  </div>
-                </div>
-              ))}
+                  Search Funds
+                </button>
+              </div>
+            )}
+          </div>
+
+          {thermoLoading && watchlistThermos.length === 0 ? (
+            <div className="card text-center py-12">
+              <RefreshCw className="w-8 h-8 text-indigo-500 animate-spin mx-auto mb-3" />
+              <p className="text-sm font-semibold text-slate-300">Evaluating valuation temperatures…</p>
+              <p className="text-xs text-slate-500 mt-1">Analyzing 3-year rolling returns and 10-year percentile valuation rank.</p>
             </div>
           ) : (
-            <p className="text-slate-500 text-sm text-center py-6">Loading thermometer…</p>
+            <div className="space-y-3">
+              {watchlistThermos.map((t) => {
+                const isOverheated = t.temperature >= 80
+                const isHot = t.temperature >= 60 && t.temperature < 80
+                const isWarm = t.temperature >= 40 && t.temperature < 60
+
+                const badgeBg = isOverheated
+                  ? 'bg-red-950/60 border-red-800 text-red-300'
+                  : isHot
+                  ? 'bg-amber-950/60 border-amber-800 text-amber-300'
+                  : isWarm
+                  ? 'bg-emerald-950/60 border-emerald-800 text-emerald-300'
+                  : 'bg-cyan-950/60 border-cyan-800 text-cyan-300'
+
+                const barColor = isOverheated
+                  ? 'bg-gradient-to-r from-amber-500 to-red-500'
+                  : isHot
+                  ? 'bg-gradient-to-r from-yellow-500 to-amber-500'
+                  : isWarm
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                  : 'bg-gradient-to-r from-blue-500 to-cyan-400'
+
+                return (
+                  <div key={t.scheme_code} className="card border-slate-700/80 bg-slate-900/90 shadow-lg">
+                    {/* Header */}
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-indigo-300 border border-slate-700">
+                            {t.category}
+                          </span>
+                          {watchlist.some((w) => w.scheme_code === t.scheme_code) && (
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-800 flex items-center gap-1">
+                              <Star className="w-2.5 h-2.5 fill-amber-400" /> Watchlist
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-100 leading-snug truncate">
+                          {t.scheme_name}
+                        </h4>
+                      </div>
+
+                      {/* Temperature Badge */}
+                      <div className={`px-3 py-1.5 rounded-xl border text-right shrink-0 ${badgeBg}`}>
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <span className="text-base">{t.emoji}</span>
+                          <span className="text-sm font-extrabold font-mono">{t.temperature.toFixed(0)}°</span>
+                        </div>
+                        <p className="text-[10px] font-bold tracking-wider uppercase mt-0.5">{t.label}</p>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar / Temperature Gauge */}
+                    <div className="my-3">
+                      <div className="h-2.5 w-full bg-slate-800 rounded-full overflow-hidden p-0.5 border border-slate-700/50">
+                        <div
+                          className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+                          style={{ width: `${Math.max(6, Math.min(100, t.temperature))}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-500 font-medium mt-1">
+                        <span>0° Freezing (Bargain)</span>
+                        <span>40° WARM</span>
+                        <span>70° HOT</span>
+                        <span>100° OVERHEATED (Peak)</span>
+                      </div>
+                    </div>
+
+                    {/* Metrics row */}
+                    <div className="grid grid-cols-3 gap-2 my-2 text-center">
+                      <div className="bg-slate-800/60 rounded-xl py-2 px-1 border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">3Y CAGR</span>
+                        <span className="text-xs font-bold text-slate-200">
+                          {isNaN(t.cagr_3y) ? '—' : fmtPct(t.cagr_3y * 100)}
+                        </span>
+                      </div>
+                      <div className="bg-slate-800/60 rounded-xl py-2 px-1 border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">Valuation Percentile</span>
+                        <span className="text-xs font-bold text-indigo-300">
+                          {t.cagr_3y_percentile ? `${t.cagr_3y_percentile.toFixed(0)}th pct` : '50th pct'}
+                        </span>
+                      </div>
+                      <div className="bg-slate-800/60 rounded-xl py-2 px-1 border border-slate-800">
+                        <span className="text-[10px] text-slate-400 block">Drawdown Recovery</span>
+                        <span className="text-xs font-bold text-slate-200">
+                          {t.in_recovery ? `${t.recovery_pct.toFixed(0)}% recovered` : 'At All-Time High'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Recommendations */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-3">
+                      <div className="bg-slate-800/50 rounded-xl p-2.5 border border-slate-700/60">
+                        <p className="text-[11px] font-semibold text-slate-400 mb-0.5 flex items-center gap-1">
+                          📅 Monthly SIP Recommendation
+                        </p>
+                        <p className="text-xs font-medium text-slate-200 leading-relaxed">{t.sip_recommendation}</p>
+                      </div>
+
+                      <div className="bg-slate-800/50 rounded-xl p-2.5 border border-slate-700/60">
+                        <p className="text-[11px] font-semibold text-slate-400 mb-0.5 flex items-center gap-1">
+                          💰 Lump Sum Recommendation
+                        </p>
+                        <p className="text-xs font-medium text-slate-200 leading-relaxed">{t.lumpsum_recommendation}</p>
+                      </div>
+                    </div>
+
+                    {/* Rationale */}
+                    <div className="mt-2.5 bg-slate-950/60 rounded-xl p-2.5 border border-slate-800/80 text-xs text-slate-400 leading-relaxed">
+                      💡 <strong className="text-slate-300">Why this score:</strong> {t.rationale}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}

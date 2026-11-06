@@ -227,6 +227,16 @@ def stress_test(
 # Category Thermometer
 # ─────────────────────────────────────────────────────────────────────────────
 
+class BatchThermometerItem(BaseModel):
+    scheme_code: int
+    scheme_name: Optional[str] = None
+    category: Optional[str] = None
+
+
+class BatchThermometerRequest(BaseModel):
+    schemes: list[BatchThermometerItem]
+
+
 @router.get("/thermometer/{scheme_code}", summary="Category temperature for a fund")
 def category_temp(
     scheme_code: int,
@@ -238,8 +248,15 @@ def category_temp(
     Shows whether this category is Cold / Warm / Hot / Overheated.
     """
     nav = _get_nav_or_404(scheme_code)
-    temp = compute_category_temperature(category, nav)
+    from src.data.storage import get_scheme
+    meta = get_scheme(scheme_code) or {}
+    resolved_category = meta.get("scheme_category") or category or "Equity"
+    scheme_name = meta.get("scheme_name", f"Scheme {scheme_code}")
+
+    temp = compute_category_temperature(resolved_category, nav)
     return {
+        "scheme_code": scheme_code,
+        "scheme_name": scheme_name,
         "category": temp.category,
         "temperature": temp.temperature,
         "label": temp.label,
@@ -253,6 +270,46 @@ def category_temp(
         "lumpsum_recommendation": temp.lumpsum_recommendation,
         "rationale": temp.rationale,
     }
+
+
+@router.post("/thermometer/batch", summary="Batch thermometer for multiple funds")
+def batch_thermometer(
+    body: BatchThermometerRequest,
+    user: dict = Depends(get_current_user),
+):
+    """
+    Get category thermometer readings for a list of mutual funds (e.g. from user's Watchlist).
+    """
+    results = []
+    from src.data.storage import get_scheme
+    for item in body.schemes:
+        code = item.scheme_code
+        try:
+            nav = _get_nav_or_404(code)
+            meta = get_scheme(code) or {}
+            cat = item.category or meta.get("scheme_category") or "Equity"
+            name = item.scheme_name or meta.get("scheme_name") or f"Scheme {code}"
+            temp = compute_category_temperature(cat, nav)
+            results.append({
+                "scheme_code": code,
+                "scheme_name": name,
+                "category": temp.category,
+                "temperature": temp.temperature,
+                "label": temp.label,
+                "emoji": temp.emoji,
+                "cagr_3y": temp.cagr_3y,
+                "cagr_3y_percentile": temp.cagr_3y_percentile,
+                "max_drawdown": temp.max_drawdown,
+                "in_recovery": temp.in_recovery,
+                "recovery_pct": temp.recovery_pct,
+                "sip_recommendation": temp.sip_recommendation,
+                "lumpsum_recommendation": temp.lumpsum_recommendation,
+                "rationale": temp.rationale,
+            })
+        except Exception as e:
+            logger.warning(f"Error computing thermometer for scheme {code}: {e}")
+
+    return {"results": results, "count": len(results)}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

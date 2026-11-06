@@ -51,6 +51,8 @@ export const analyticsAPI = {
     api.get(`/analytics/stress-test/${scenario}`, { params: { portfolio_value: portfolioValue } }),
   thermometer: (code = 122640, category = 'Equity') =>
     api.get(`/analytics/thermometer/${code}`, { params: { category } }),
+  thermometerBatch: (schemes: { scheme_code: number; scheme_name?: string; category?: string }[]) =>
+    api.post('/analytics/thermometer/batch', { schemes }),
   dudScan: (code = 122640) => api.get(`/analytics/dud-scan/${code}`),
 }
 

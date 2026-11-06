@@ -102,7 +102,7 @@ def _recovery_status(nav: pd.Series) -> tuple[bool, float]:
 
 def compute_category_temperature(
     category: str,
-    representative_nav: pd.Series,
+    representative_nav: pd.Series | pd.DataFrame,
 ) -> CategoryTemperature:
     """
     Compute the temperature for a single category.
@@ -116,6 +116,8 @@ def compute_category_temperature(
     -------
     CategoryTemperature
     """
+    if isinstance(representative_nav, pd.DataFrame):
+        representative_nav = representative_nav["nav"] if "nav" in representative_nav.columns else representative_nav.iloc[:, 0]
     nav = representative_nav.sort_index().dropna()
     if len(nav) < 50:
         return CategoryTemperature(
