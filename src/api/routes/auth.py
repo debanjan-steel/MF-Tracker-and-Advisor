@@ -8,7 +8,15 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, EmailStr
 
-from src.auth.supabase_client import sign_up, sign_in, sign_out, delete_account, get_current_user
+from src.auth.supabase_client import (
+    sign_up,
+    sign_in,
+    sign_out,
+    delete_account,
+    get_current_user,
+    request_password_reset,
+    change_password,
+)
 
 router = APIRouter()
 
@@ -21,6 +29,15 @@ class SignUpRequest(BaseModel):
 class SignInRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 
 @router.post("/signup", summary="Create a new account")
@@ -58,6 +75,19 @@ def delete_my_account(
     return delete_account("", user_id=user["user_id"])
 
 
+@router.post("/forgot-password", summary="Send password reset instructions")
+def forgot_password_route(body: ForgotPasswordRequest):
+    """Send password reset instructions to the given email address."""
+    return request_password_reset(body.email)
+
+
+@router.post("/change-password", summary="Change account password")
+def change_password_route(body: ChangePasswordRequest, user: dict = Depends(get_current_user)):
+    """Change current password after verifying old password."""
+    return change_password(user, body.old_password, body.new_password)
+
+
+
 @router.delete("/delete-account/confirm", summary="Confirm and execute account deletion")
 def delete_account_confirm(
     body: Optional[dict] = None,
@@ -68,4 +98,5 @@ def delete_account_confirm(
     Permanently deletes all user data and credentials.
     """
     return delete_account("", user_id=user["user_id"])
+
 

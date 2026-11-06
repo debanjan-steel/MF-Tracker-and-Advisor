@@ -22,6 +22,10 @@ export const authAPI = {
     api.post('/auth/login', { email, password }),
   logout: () => api.post('/auth/logout'),
   deleteAccount: () => api.delete('/auth/delete-account/confirm', { data: { confirm: true } }),
+  forgotPassword: (email: string) =>
+    api.post('/auth/forgot-password', { email }),
+  changePassword: (oldPassword: string, newPassword: string) =>
+    api.post('/auth/change-password', { old_password: oldPassword, new_password: newPassword }),
 }
 
 // ── Funds ────────────────────────────────────────────────────────────
