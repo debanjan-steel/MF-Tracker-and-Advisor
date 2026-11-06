@@ -146,15 +146,33 @@ export default function AlertsTab() {
         {/* ── CallMeBot WhatsApp (100% Free Forever) ── */}
         {provider === 'callmebot' && (
           <div className="space-y-3 mb-4">
-            <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-xl p-3 text-xs text-emerald-200">
-              <div className="flex items-center gap-1.5 font-bold mb-1 text-emerald-300">
+            <div className="bg-emerald-950/40 border border-emerald-800/60 rounded-xl p-3.5 text-xs text-emerald-200">
+              <div className="flex items-center gap-1.5 font-bold mb-1.5 text-emerald-300">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" /> 100% Free Forever — 30-Second Setup:
               </div>
-              <ol className="list-decimal list-inside space-y-1 text-[11px] text-emerald-200/90 ml-1">
-                <li>Save <strong className="text-white">+34 644 67 85 86</strong> (or +34 644 44 49 53) in your phone contacts as <em>CallMeBot</em>.</li>
-                <li>Send a WhatsApp message saying: <code className="bg-emerald-900/80 px-1.5 py-0.5 rounded text-white font-mono">I allow callmebot to send me messages</code></li>
-                <li>CallMeBot will reply immediately with your private <strong>API Key</strong>.</li>
-                <li>Enter your phone number &amp; API Key below and tap <strong>Test</strong>!</li>
+              <ol className="list-decimal list-inside space-y-2 text-[11px] text-emerald-200/90 ml-1">
+                <li>
+                  <a
+                    href="https://wa.me/34623786449?text=I%20allow%20callmebot%20to%20send%20me%20messages"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-500 transition-colors my-0.5"
+                  >
+                    👉 Click here to Open WhatsApp <ExternalLink className="w-3 h-3" />
+                  </a>
+                  <span className="block text-[10px] text-emerald-400 mt-0.5">
+                    (Or add <strong>+34 623 78 64 49</strong> or <strong>+34 644 26 33 77</strong> to contacts)
+                  </span>
+                </li>
+                <li>
+                  Send this exact message: <code className="bg-emerald-900/90 px-1.5 py-0.5 rounded text-white font-mono select-all">I allow callmebot to send me messages</code>
+                </li>
+                <li>
+                  CallMeBot will reply in ~5 seconds with your <strong>API Key</strong> (e.g. <code className="text-white font-mono">982143</code>).
+                </li>
+                <li>
+                  Enter your full WhatsApp number (e.g. <code className="text-white font-mono">+919876543210</code>) and that API Key below, then click <strong>Save</strong> and <strong>Send Test Alert</strong>!
+                </li>
               </ol>
             </div>
 
