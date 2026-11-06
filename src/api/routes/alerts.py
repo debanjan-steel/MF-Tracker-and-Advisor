@@ -84,7 +84,7 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
         ).fetchall()
         existing_keys = {(r["alert_type"], r["title"], r["scheme_code"]) for r in existing}
 
-        # 3. Fetch user holdings
+        # 3. Fetch user holdings strictly from user's portfolio
         holdings = conn.execute(
             "SELECT scheme_code, scheme_name, invested_amount, avg_nav, category FROM user_holdings WHERE user_id = ?",
             (user_id,),
@@ -92,40 +92,134 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
 
         new_alerts = []
 
-        # ── (A) 📈 Entry Signal / Deep Value Dip Alert ───────────────────────
-        if entry_enabled:
-            # Check user holdings first, or fallback to smallcap / flexicap market leaders
-            target_schemes = [
-                (h["scheme_code"], h["scheme_name"]) for h in holdings
-            ]
-            if not target_schemes:
-                target_schemes = [
-                    (118989, "Nippon India Small Cap Fund"),
-                    (122639, "Parag Parikh Flexi Cap Fund"),
-                ]
+        # If user has NO mutual funds in portfolio, provide clear onboarding notice
+        if not holdings:
+            key = ("portfolio_empty", "No Mutual Funds in Portfolio Yet", None)
+            if key not in existing_keys:
+                new_alerts.append({
+                    "id": str(uuid.uuid4()),
+                    "user_id": user_id,
+                    "alert_type": "portfolio_empty",
+                    "title": "📋 No Mutual Funds in Portfolio Yet",
+                    "message": (
+                        "Alerts are generated exclusively for the mutual funds in your portfolio. "
+                        "You currently have 0 mutual funds added. Navigate to the Portfolio tab and enter your holdings "
+                        "or upload your CAS statement to start receiving entry timing, SIP execution dates, and dud fund warnings for your portfolio."
+                    ),
+                    "severity": "INFO",
+                    "scheme_code": None,
+                    "scheme_name": None,
+                    "action_text": "Action: Open the Portfolio tab to add your mutual fund holdings.",
+                    "created_at": now_iso,
+                    "expires_at": expires_iso,
+                })
+        else:
+            # ── (A) 📈 Entry Signal / Deep Value Dip Alert (Held Funds Only) ───
+            if entry_enabled:
+                for h in holdings[:3]:
+                    sc_code = h["scheme_code"]
+                    sc_name = h["scheme_name"]
+                    title = f"Value Entry Opportunity: {sc_name}"
+                    key = ("entry", title, sc_code)
+                    if key not in existing_keys:
+                        new_alerts.append({
+                            "id": str(uuid.uuid4()),
+                            "user_id": user_id,
+                            "alert_type": "entry",
+                            "title": title,
+                            "message": (
+                                f"Your held fund '{sc_name}' is currently trading in an attractive value zone near its 200-day EMA support. "
+                                f"It offers favorable risk-reward asymmetry for accumulating additional units or stepping up SIPs."
+                            ),
+                            "severity": "SUCCESS",
+                            "scheme_code": sc_code,
+                            "scheme_name": sc_name,
+                            "action_text": f"Action: Consider deploying an additional tranche or increasing your monthly SIP into {sc_name}.",
+                            "created_at": now_iso,
+                            "expires_at": expires_iso,
+                        })
 
-            for sc_code, sc_name in target_schemes[:2]:
-                title = f"Strong Value Entry: {sc_name}"
-                key = ("entry", title, sc_code)
+            # ── (B) 📅 Monthly Smart SIP Execution Plan (For Portfolio Holdings)
+            if sip_enabled:
+                month_name = datetime.now().strftime("%B")
+                held_names = ", ".join([h["scheme_name"] for h in holdings[:3]])
+                if len(holdings) > 3:
+                    held_names += f" and {len(holdings) - 3} others"
+                title = f"Smart SIP Plan for Your Portfolio ({month_name})"
+                key = ("sip", title, None)
                 if key not in existing_keys:
                     new_alerts.append({
                         "id": str(uuid.uuid4()),
                         "user_id": user_id,
-                        "alert_type": "entry",
+                        "alert_type": "sip",
                         "title": title,
                         "message": (
-                            f"{sc_name} is trading in the high-reward Deep Value Zone. "
-                            f"Price is testing the 200-day EMA support with positive risk-reward asymmetry."
+                            f"Optimal empirical SIP execution window for your portfolio holdings ({held_names}) is the 7th–12th. "
+                            f"Post-expiry market liquidity historically provides lower acquisition NAVs."
                         ),
-                        "severity": "SUCCESS",
-                        "scheme_code": sc_code,
-                        "scheme_name": sc_name,
-                        "action_text": "Action: Deploy 1st tranche of lump-sum or increase monthly SIP multiplier to 1.5x.",
+                        "severity": "INFO",
+                        "scheme_code": None,
+                        "scheme_name": None,
+                        "action_text": "Action: Proceed with scheduled monthly SIPs across your portfolio holdings with standard 1.0x–1.2x budget allocation.",
                         "created_at": now_iso,
                         "expires_at": expires_iso,
                     })
 
-        # ── (B) 🌍 Macro Volatility / Shock Warning ──────────────────────────
+            # ── (C) ⚠️ Dud Fund Underperformance & Expense Drag (Held Funds Only)
+            if dud_enabled:
+                for h in holdings:
+                    sc_code = h["scheme_code"]
+                    sc_name = h["scheme_name"]
+                    # 1. Regular plan check (distributor commission drag)
+                    if "regular" in sc_name.lower():
+                        title = f"Expense Drag Warning: {sc_name}"
+                        key = ("dud", title, sc_code)
+                        if key not in existing_keys:
+                            new_alerts.append({
+                                "id": str(uuid.uuid4()),
+                                "user_id": user_id,
+                                "alert_type": "dud",
+                                "title": title,
+                                "message": (
+                                    f"Your portfolio holding '{sc_name}' is a Regular plan incurring distributor commission "
+                                    f"(~1.0%–1.5% extra expense ratio p.a.) compared to Direct Growth. Over 10 years, this significantly erodes your compounding corpus."
+                                ),
+                                "severity": "DANGER",
+                                "scheme_code": sc_code,
+                                "scheme_name": sc_name,
+                                "action_text": f"Action: Switch '{sc_name}' to its Direct Growth counterpart to stop distributor commissions.",
+                                "created_at": now_iso,
+                                "expires_at": expires_iso,
+                            })
+
+                # 2. Portfolio concentration check
+                total_inv = sum(float(h["invested_amount"] or 0) for h in holdings)
+                if total_inv > 0 and len(holdings) > 1:
+                    for h in holdings:
+                        inv = float(h["invested_amount"] or 0)
+                        pct = (inv / total_inv) * 100
+                        if pct >= 40:
+                            title = f"High Portfolio Concentration: {h['scheme_name']}"
+                            key = ("concentration", title, h["scheme_code"])
+                            if key not in existing_keys:
+                                new_alerts.append({
+                                    "id": str(uuid.uuid4()),
+                                    "user_id": user_id,
+                                    "alert_type": "dud",
+                                    "title": title,
+                                    "message": (
+                                        f"'{h['scheme_name']}' represents {pct:.0f}% of your total portfolio invested value. "
+                                        f"Having over 40% of your portfolio in a single fund increases category-specific drawdown risk."
+                                    ),
+                                    "severity": "WARNING",
+                                    "scheme_code": h["scheme_code"],
+                                    "scheme_name": h["scheme_name"],
+                                    "action_text": "Action: Rebalance incremental SIPs into other under-allocated categories.",
+                                    "created_at": now_iso,
+                                    "expires_at": expires_iso,
+                                })
+
+        # ── (D) 🌍 Macro Volatility / Shock Warning (Global Market Risk) ──────
         if macro_enabled:
             title = "Macro Risk Alert: Global Volatility & Crude Watch"
             key = ("macro", title, None)
@@ -137,7 +231,7 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
                     "title": title,
                     "message": (
                         "Geopolitical tensions and crude price swings are elevated. "
-                        "India VIX and USD/INR movements suggest temporary range-bound volatility."
+                        "India VIX and USD/INR movements suggest temporary range-bound volatility across your equity holdings."
                     ),
                     "severity": "WARNING",
                     "scheme_code": None,
@@ -146,56 +240,6 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
                     "created_at": now_iso,
                     "expires_at": expires_iso,
                 })
-
-        # ── (C) 📅 Monthly Smart SIP Execution Plan ──────────────────────────
-        if sip_enabled:
-            month_name = datetime.now().strftime("%B")
-            title = f"Smart SIP Plan for {month_name}"
-            key = ("sip", title, None)
-            if key not in existing_keys:
-                new_alerts.append({
-                    "id": str(uuid.uuid4()),
-                    "user_id": user_id,
-                    "alert_type": "sip",
-                    "title": title,
-                    "message": (
-                        f"Optimal empirical SIP execution window for {month_name} is the 7th–12th. "
-                        f"Post-expiry market liquidity offers historically lower average acquisition NAVs."
-                    ),
-                    "severity": "INFO",
-                    "scheme_code": None,
-                    "scheme_name": None,
-                    "action_text": f"Action: Proceed with your planned monthly SIP with standard 1.0x–1.2x budget allocation.",
-                    "created_at": now_iso,
-                    "expires_at": expires_iso,
-                })
-
-        # ── (D) ⚠️ Dud Fund Underperformance Red Flag ────────────────────────
-        if dud_enabled and holdings:
-            # Check if any held fund has potential underperformance
-            for h in holdings:
-                # If fund name contains "Regular" or category underperformer
-                if "regular" in h["scheme_name"].lower():
-                    title = f"Dud Fund Warning: {h['scheme_name']}"
-                    key = ("dud", title, h["scheme_code"])
-                    if key not in existing_keys:
-                        new_alerts.append({
-                            "id": str(uuid.uuid4()),
-                            "user_id": user_id,
-                            "alert_type": "dud",
-                            "title": title,
-                            "message": (
-                                f"{h['scheme_name']} incurs high distributor commission drag (~1.0%–1.5% extra expense ratio p.a.) "
-                                f"relative to its Direct-Growth benchmark counterpart."
-                            ),
-                            "severity": "DANGER",
-                            "scheme_code": h["scheme_code"],
-                            "scheme_name": h["scheme_name"],
-                            "action_text": "Action: Switch to Direct Growth scheme to boost long-term compounding return by ~1.2% p.a.",
-                            "created_at": now_iso,
-                            "expires_at": expires_iso,
-                        })
-                        break
 
         # Insert new alerts into DB
         for a in new_alerts:
