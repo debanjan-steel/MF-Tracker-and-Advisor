@@ -147,14 +147,25 @@ export interface SIPRecommendation {
 }
 
 export interface AlertSettings {
-  whatsapp_number: string
-  callmebot_apikey?: string
-  telegram_chat_id?: string
-  telegram_bot_token?: string
   entry_alert: boolean
   macro_alert: boolean
   sip_reminder: boolean
   dud_alert: boolean
+  retention_days?: number
+}
+
+export interface InAppAlert {
+  id: string
+  alert_type: 'entry' | 'macro' | 'sip' | 'dud'
+  title: string
+  message: string
+  severity: 'SUCCESS' | 'WARNING' | 'INFO' | 'DANGER'
+  scheme_code?: number | null
+  scheme_name?: string | null
+  action_text?: string | null
+  created_at: string
+  expires_at: string
+  days_remaining: number
 }
 
 export interface TaxLine {

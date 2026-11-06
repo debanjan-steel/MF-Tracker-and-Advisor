@@ -117,11 +117,38 @@ CREATE TABLE IF NOT EXISTS user_holdings (
     UNIQUE(user_id, scheme_code)
 );
 
+-- User in-app alerts
+CREATE TABLE IF NOT EXISTS user_alerts (
+    id                  TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    alert_type          TEXT NOT NULL,          -- 'entry' | 'macro' | 'sip' | 'dud'
+    title               TEXT NOT NULL,
+    message             TEXT NOT NULL,
+    severity            TEXT DEFAULT 'INFO',    -- 'INFO' | 'SUCCESS' | 'WARNING' | 'DANGER'
+    scheme_code         INTEGER,
+    scheme_name         TEXT,
+    action_text         TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    expires_at          TEXT NOT NULL,          -- ISO datetime (default 14 days retention)
+    is_dismissed        INTEGER DEFAULT 0
+);
+
+-- User alert preferences
+CREATE TABLE IF NOT EXISTS user_alert_preferences (
+    user_id             TEXT PRIMARY KEY,
+    entry_alert         INTEGER DEFAULT 1,
+    macro_alert         INTEGER DEFAULT 1,
+    sip_reminder        INTEGER DEFAULT 1,
+    dud_alert           INTEGER DEFAULT 1,
+    updated_at          TEXT DEFAULT (datetime('now'))
+);
+
 -- Index for fast time-series queries
 CREATE INDEX IF NOT EXISTS idx_nav_scheme_date  ON nav_history(scheme_code, nav_date DESC);
 CREATE INDEX IF NOT EXISTS idx_macro_ticker_date ON macro_history(ticker, price_date DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_status ON prediction_ledger(status, target_date);
 CREATE INDEX IF NOT EXISTS idx_user_holdings_user ON user_holdings(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_alerts_user ON user_alerts(user_id, is_dismissed, created_at DESC);
 """
 
 
