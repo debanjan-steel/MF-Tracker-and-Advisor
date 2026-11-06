@@ -3,6 +3,31 @@ import { TacticalPlan, TimingScore, GoalPlan } from '../types'
 
 type Tab = 'planner' | 'portfolio' | 'explorer' | 'alerts' | 'settings'
 
+export interface WatchlistItem {
+  scheme_code: number
+  scheme_name: string
+  fund_house?: string
+  scheme_category?: string
+  added_at?: string
+}
+
+const loadSavedWatchlist = (): WatchlistItem[] => {
+  try {
+    const raw = localStorage.getItem('mf_watchlist')
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+const persistWatchlist = (list: WatchlistItem[]) => {
+  try {
+    localStorage.setItem('mf_watchlist', JSON.stringify(list))
+  } catch {
+    // ignore
+  }
+}
+
 interface AppState {
   // ── Navigation ─────────────────────────────────────────────────
   activeTab: Tab
@@ -46,6 +71,11 @@ interface AppState {
   setPlannerTiming: (v: TimingScore | null) => void
   plannerGoal: GoalPlan | null
   setPlannerGoal: (v: GoalPlan | null) => void
+
+  // ── Watchlist ──────────────────────────────────────────────────
+  watchlist: WatchlistItem[]
+  addToWatchlist: (item: WatchlistItem) => void
+  removeFromWatchlist: (code: number) => void
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -86,4 +116,22 @@ export const useAppStore = create<AppState>((set) => ({
   setPlannerTiming: (v) => set({ plannerTiming: v }),
   plannerGoal: null,
   setPlannerGoal: (v) => set({ plannerGoal: v }),
+
+  // ── Watchlist ──────────────────────────────────────────────────
+  watchlist: loadSavedWatchlist(),
+  addToWatchlist: (item) =>
+    set((state) => {
+      if (state.watchlist.some((w) => w.scheme_code === item.scheme_code)) {
+        return state
+      }
+      const updated = [item, ...state.watchlist]
+      persistWatchlist(updated)
+      return { watchlist: updated }
+    }),
+  removeFromWatchlist: (code) =>
+    set((state) => {
+      const updated = state.watchlist.filter((w) => w.scheme_code !== code)
+      persistWatchlist(updated)
+      return { watchlist: updated }
+    }),
 }))

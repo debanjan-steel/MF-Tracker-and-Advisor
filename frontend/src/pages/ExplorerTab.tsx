@@ -2,7 +2,8 @@ import React, { useState, useCallback, useRef } from 'react'
 import { fundsAPI, analyticsAPI } from '../lib/api'
 import { SchemeInfo, Scorecard, Thermometer } from '../types'
 import { fmtPct, fmt, thermometerColor, signalColor } from '../lib/utils'
-import { Search, TrendingUp, Thermometer as ThermIcon, BarChart2 } from 'lucide-react'
+import { Search, TrendingUp, Thermometer as ThermIcon, BarChart2, Star, Trash2 } from 'lucide-react'
+import { useAppStore } from '../store/appStore'
 import {
   LineChart,
   Line,
@@ -14,6 +15,7 @@ import {
 } from 'recharts'
 
 export default function ExplorerTab() {
+  const { watchlist, addToWatchlist, removeFromWatchlist } = useAppStore()
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SchemeInfo[]>([])
   const [selected, setSelected] = useState<SchemeInfo | null>(null)
@@ -23,7 +25,25 @@ export default function ExplorerTab() {
   const [backtestData, setBacktestData] = useState<any>(null)
   const [searching, setSearching] = useState(false)
   const [loadingFund, setLoadingFund] = useState(false)
-  const [activeSection, setActiveSection] = useState<'search' | 'thermo' | 'backtest'>('search')
+  const [activeSection, setActiveSection] = useState<'search' | 'watchlist' | 'thermo' | 'backtest'>('search')
+
+  const isWatched = (code: number) => watchlist.some((w) => w.scheme_code === code)
+
+  const toggleWatchlist = (scheme: any) => {
+    const code = Number(scheme.scheme_code || scheme.schemeCode)
+    const name = scheme.scheme_name || scheme.schemeName || `Scheme ${code}`
+    if (isWatched(code)) {
+      removeFromWatchlist(code)
+    } else {
+      addToWatchlist({
+        scheme_code: code,
+        scheme_name: name,
+        fund_house: scheme.fund_house || '',
+        scheme_category: scheme.scheme_category || '',
+        added_at: new Date().toISOString(),
+      })
+    }
+  }
 
   const doSearch = useCallback(async (q: string) => {
     if (!q.trim() || q.length < 2) return
@@ -99,6 +119,11 @@ export default function ExplorerTab() {
       <div className="flex bg-slate-800 rounded-xl p-1 gap-1">
         {[
           { key: 'search', icon: <Search className="w-4 h-4" />, label: 'Fund Search' },
+          {
+            key: 'watchlist',
+            icon: <Star className={`w-4 h-4 ${watchlist.length > 0 ? 'text-amber-400 fill-amber-400' : ''}`} />,
+            label: `Watchlist${watchlist.length > 0 ? ` (${watchlist.length})` : ''}`,
+          },
           { key: 'thermo', icon: <ThermIcon className="w-4 h-4" />, label: 'Thermometer' },
           { key: 'backtest', icon: <BarChart2 className="w-4 h-4" />, label: 'Backtest' },
         ].map((t) => (
@@ -145,15 +170,30 @@ export default function ExplorerTab() {
                 const code = r.scheme_code || r.schemeCode
                 const name = r.scheme_name || r.schemeName || `Scheme ${code}`
                 const subtitle = [r.fund_house, r.scheme_category].filter(Boolean).join(' · ')
+                const watched = isWatched(code)
                 return (
-                  <button
+                  <div
                     key={code}
-                    onClick={() => selectFund(r)}
-                    className="w-full text-left px-4 py-3 hover:bg-slate-700 border-b border-slate-700/50 last:border-0 transition-colors"
+                    className="flex items-center justify-between px-4 py-2.5 hover:bg-slate-700/80 border-b border-slate-700/50 last:border-0 transition-colors"
                   >
-                    <p className="text-sm font-medium text-slate-100 leading-tight">{name}</p>
-                    {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
-                  </button>
+                    <button
+                      onClick={() => selectFund(r)}
+                      className="flex-1 text-left min-w-0 pr-3"
+                    >
+                      <p className="text-sm font-medium text-slate-100 leading-tight">{name}</p>
+                      {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        toggleWatchlist(r)
+                      }}
+                      title={watched ? 'Remove from Watchlist' : 'Add to Watchlist'}
+                      className="p-2 rounded-lg hover:bg-slate-600/50 text-slate-400 hover:text-amber-400 transition-colors shrink-0"
+                    >
+                      <Star className={`w-4 h-4 ${watched ? 'text-amber-400 fill-amber-400' : 'text-slate-500 hover:text-slate-300'}`} />
+                    </button>
+                  </div>
                 )
               })}
             </div>
@@ -171,7 +211,31 @@ export default function ExplorerTab() {
           {/* Scorecard */}
           {scorecard && (
             <div className="card">
-              <p className="section-title">{(selected?.scheme_name || scorecard.scheme_name || 'Fund Performance')?.slice(0, 60)}</p>
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-bold text-slate-100 leading-tight">
+                    {selected?.scheme_name || scorecard.scheme_name || 'Fund Performance'}
+                  </p>
+                  {(selected?.fund_house || selected?.scheme_category) && (
+                    <p className="text-xs text-slate-400 mt-1">
+                      {[selected?.fund_house, selected?.scheme_category].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                </div>
+                {selected && (
+                  <button
+                    onClick={() => toggleWatchlist(selected)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 border transition-all ${
+                      isWatched(selected.scheme_code)
+                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
+                        : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
+                    }`}
+                  >
+                    <Star className={`w-3.5 h-3.5 ${isWatched(selected.scheme_code) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
+                    {isWatched(selected.scheme_code) ? 'In Watchlist' : 'Add to Watchlist'}
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <MetricBox label="CAGR 1Y" value={fmtPct(scorecard.cagr_1y)} color={scorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
                 <MetricBox label="CAGR 3Y" value={fmtPct(scorecard.cagr_3y)} color={scorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
@@ -214,6 +278,185 @@ export default function ExplorerTab() {
             </div>
           )}
         </>
+      )}
+
+      {/* ── Watchlist ────────────────────────────── */}
+      {activeSection === 'watchlist' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="section-title mb-0 flex items-center gap-2">
+                <Star className="w-4 h-4 text-amber-400 fill-amber-400" /> Watchlist
+              </p>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {watchlist.length} {watchlist.length === 1 ? 'fund' : 'funds'} saved
+              </p>
+            </div>
+          </div>
+
+          {watchlist.length === 0 ? (
+            <div className="card text-center py-12">
+              <Star className="w-12 h-12 text-slate-600 mx-auto mb-3 opacity-40" />
+              <p className="text-base font-semibold text-slate-200">Your Watchlist is Empty</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                Search for any mutual fund in the <strong>Fund Search</strong> tab and tap <strong>&quot;Add to Watchlist&quot;</strong> to track it here.
+              </p>
+              <button
+                onClick={() => setActiveSection('search')}
+                className="btn-primary mt-4 text-xs py-2 px-4 inline-flex items-center gap-1.5"
+              >
+                <Search className="w-3.5 h-3.5" /> Go to Fund Search
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {watchlist.map((w) => {
+                const isCurrent = selected?.scheme_code === w.scheme_code
+                return (
+                  <div
+                    key={w.scheme_code}
+                    className={`card p-3 transition-all border ${
+                      isCurrent ? 'border-indigo-500 bg-slate-800' : 'border-slate-700/60 bg-slate-800 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div
+                        onClick={() => selectFund(w)}
+                        className="flex-1 cursor-pointer min-w-0"
+                      >
+                        <p className="text-sm font-semibold text-slate-100 leading-snug hover:text-indigo-300 transition-colors">
+                          {w.scheme_name}
+                        </p>
+                        {(w.fund_house || w.scheme_category) && (
+                          <p className="text-xs text-slate-400 mt-0.5 truncate">
+                            {[w.fund_house, w.scheme_category].filter(Boolean).join(' · ')}
+                          </p>
+                        )}
+                        <p className="text-[11px] text-indigo-400 mt-1 font-medium flex items-center gap-1">
+                          Tap to view Scorecard &amp; 200 EMA
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => selectFund(w)}
+                          title="View analytics"
+                          className="rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white border border-indigo-500/30 transition-all text-xs font-medium px-2.5 py-1.5 flex items-center gap-1"
+                        >
+                          View
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            removeFromWatchlist(w.scheme_code)
+                            if (selected?.scheme_code === w.scheme_code) {
+                              setScorecard(null)
+                              setSelected(null)
+                              setNavData([])
+                            }
+                          }}
+                          title="Remove from watchlist"
+                          className="p-2 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-950/30 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Loading Fund Details in Watchlist */}
+          {loadingFund && (
+            <div className="card text-center py-8">
+              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-sm text-slate-300 font-medium">Fetching Fund NAV History &amp; Analytics…</p>
+              <p className="text-xs text-slate-500 mt-1">Downloading historical records from MFAPI &amp; computing scorecard</p>
+            </div>
+          )}
+
+          {/* Render selected fund's Scorecard & NAV Chart right inside Watchlist tab */}
+          {scorecard && selected && (
+            <div className="space-y-4 pt-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">
+                  Fund Analytics &amp; Scorecard
+                </span>
+                <button
+                  onClick={() => { setScorecard(null); setSelected(null); setNavData([]) }}
+                  className="text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Close Analytics ✕
+                </button>
+              </div>
+
+              {/* Scorecard */}
+              <div className="card">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-bold text-slate-100 leading-tight">
+                      {selected.scheme_name || scorecard.scheme_name}
+                    </p>
+                    {(selected.fund_house || selected.scheme_category) && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        {[selected.fund_house, selected.scheme_category].filter(Boolean).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => toggleWatchlist(selected)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 border bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-red-500/20 hover:border-red-500/40 hover:text-red-400 transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Remove
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <MetricBox label="CAGR 1Y" value={fmtPct(scorecard.cagr_1y)} color={scorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
+                  <MetricBox label="CAGR 3Y" value={fmtPct(scorecard.cagr_3y)} color={scorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
+                  <MetricBox label="CAGR 5Y" value={fmtPct(scorecard.cagr_5y)} color={scorecard.cagr_5y > 0 ? 'text-green-400' : 'text-red-400'} />
+                  <MetricBox label="Sharpe" value={fmt(scorecard.sharpe)} />
+                  <MetricBox label="Max DD" value={fmtPct(scorecard.max_drawdown)} color="text-red-400" />
+                  <MetricBox label="Alpha" value={fmtPct(scorecard.alpha)} color={scorecard.alpha > 0 ? 'text-green-400' : 'text-red-400'} />
+                  <MetricBox label="Beta" value={fmt(scorecard.beta)} />
+                  <MetricBox label="Up Cap" value={fmtPct(scorecard.up_capture)} color="text-green-400" />
+                  <MetricBox label="Dn Cap" value={fmtPct(scorecard.down_capture)} color="text-red-400" />
+                </div>
+                <div className="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-3">
+                  <span className="text-slate-400 text-sm">Overall Grade</span>
+                  <span className={`text-2xl font-black ${(scorecard.overall_score ?? 60) > 65 ? 'text-green-400' : (scorecard.overall_score ?? 60) > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {scorecard.grade || 'A'}
+                  </span>
+                </div>
+              </div>
+
+              {/* NAV Chart */}
+              {navData.length > 0 && (
+                <div className="card">
+                  <p className="section-title flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-indigo-400" /> NAV + 200-Day EMA
+                  </p>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={navData.slice(-60)}>
+                      <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} />
+                      <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickLine={false} axisLine={false} width={40} />
+                      <Tooltip
+                        contentStyle={{ background: '#1e293b', border: '1px solid #475569', borderRadius: 8 }}
+                        labelStyle={{ color: '#94a3b8', fontSize: 11 }}
+                        itemStyle={{ fontSize: 12 }}
+                      />
+                      <Line type="monotone" dataKey="nav" stroke="#6366f1" dot={false} strokeWidth={2} name="NAV" />
+                      <Line type="monotone" dataKey="ema200" stroke="#f59e0b" dot={false} strokeWidth={1.5} strokeDasharray="4 2" name="200 EMA" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── Category Thermometer ──────────────────── */}
