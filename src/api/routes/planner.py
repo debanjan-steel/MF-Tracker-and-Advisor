@@ -117,7 +117,7 @@ class TacticalPlanRequest(BaseModel):
     capital: float = 100000.0
     monthly_limit: Optional[float] = None
     preferred_day: Optional[int] = None
-    strategy_mode: str = "tactical"  # "tactical" (with Liquid & Flexi) or "strict_equity" (Large/Mid/Small only)
+    strategy_mode: str = "strict_equity"  # "strict_equity" (Large/Mid/Small only) or "tactical" (with Liquid & Flexi)
 
 
 @router.post("/tactical-plan", summary="Complete tactical market timing, cap split & fund recommendation plan")
@@ -125,13 +125,13 @@ def tactical_plan(body: TacticalPlanRequest):
     """
     Generates an end-to-end tactical investment plan for non-CAS cold start:
     1. Market timing & macro event forecast (crude shocks, RBI MPC, budget)
-    2. Dynamic cap split based on category thermometers & strategy mode (Tactical Dynamic vs Strict Pure Equity)
+    2. Dynamic cap split based on category thermometers & strategy mode (Strict Pure Equity vs Tactical Dynamic)
     3. High-conviction fund recommendations with historical CAGR, Sharpe, max drawdown
     4. Nippon India Small Cap predicted dip timing trigger (wait 60 days vs buy now)
     5. Master month-by-month execution roadmap before March 31
     """
     capital = max(1000.0, float(body.capital))
-    strategy_mode = body.strategy_mode if body.strategy_mode in ("tactical", "strict_equity") else "tactical"
+    strategy_mode = body.strategy_mode if body.strategy_mode in ("tactical", "strict_equity") else "strict_equity"
 
     # 1. Compute Timing & Macro Danger
     timing_score = 62.0

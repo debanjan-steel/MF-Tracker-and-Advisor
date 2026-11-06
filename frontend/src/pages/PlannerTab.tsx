@@ -84,7 +84,7 @@ function generateTacticalPlanLocal(
   posture = 'GROWTH',
   timingScore = 62,
   dangerScore = 28,
-  strategyMode: 'tactical' | 'strict_equity' = 'tactical'
+  strategyMode: 'tactical' | 'strict_equity' = 'strict_equity'
 ): TacticalPlan {
   const capital = Math.max(1000, capitalInput || 100000)
 
@@ -980,37 +980,16 @@ export default function PlannerTab() {
           </div>
         </div>
 
-        {/* Strategy Mode Selector: Tactical Dynamic vs Strict Pure Equity */}
+        {/* Strategy Mode Selector: Strict Pure Equity vs Tactical Dynamic */}
         <div className="pt-3 border-t border-slate-800/80 mb-3">
           <label className="label flex items-center justify-between text-xs mb-1.5">
             <span className="font-semibold text-slate-200">Portfolio Strategy Model</span>
             <span className="text-[11px] text-slate-400">
-              {strategyMode === 'tactical' ? 'Includes Dry Powder Liquid & Flexi Cap' : '100% Pure Equity (Large / Mid / Small Only)'}
+              {strategyMode === 'strict_equity' ? '100% Pure Equity (Large / Mid / Small Only)' : 'Includes Dry Powder Liquid & Flexi Cap'}
             </span>
           </label>
           <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
-            <button
-              type="button"
-              onClick={() => {
-                setStrategyMode('tactical')
-                if (tacticalPlan && capital && Number(capital) > 0) {
-                  loadPlan('tactical')
-                }
-              }}
-              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
-                strategyMode === 'tactical'
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40 border border-indigo-400/30'
-                  : 'text-slate-400 hover:text-slate-200 border border-transparent'
-              }`}
-            >
-              <span className="flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-yellow-300" /> Tactical Dynamic
-              </span>
-              <span className={`text-[10px] font-normal ${strategyMode === 'tactical' ? 'text-indigo-200' : 'text-slate-500'}`}>
-                Flexi + Mid + Small + Liquid
-              </span>
-            </button>
-
+            {/* 1st Option: Strict Pure Equity */}
             <button
               type="button"
               onClick={() => {
@@ -1030,6 +1009,29 @@ export default function PlannerTab() {
               </span>
               <span className={`text-[10px] font-normal ${strategyMode === 'strict_equity' ? 'text-indigo-200' : 'text-slate-500'}`}>
                 Large + Mid + Small (No Debt)
+              </span>
+            </button>
+
+            {/* 2nd Option: Tactical Dynamic */}
+            <button
+              type="button"
+              onClick={() => {
+                setStrategyMode('tactical')
+                if (tacticalPlan && capital && Number(capital) > 0) {
+                  loadPlan('tactical')
+                }
+              }}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                strategyMode === 'tactical'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40 border border-indigo-400/30'
+                  : 'text-slate-400 hover:text-slate-200 border border-transparent'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-yellow-300" /> Tactical Dynamic
+              </span>
+              <span className={`text-[10px] font-normal ${strategyMode === 'tactical' ? 'text-indigo-200' : 'text-slate-500'}`}>
+                Flexi + Mid + Small + Liquid
               </span>
             </button>
           </div>

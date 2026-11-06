@@ -159,7 +159,7 @@ export const useAppStore = create<AppState>((set) => ({
   plannerCurrentAge: '30',
   setPlannerCurrentAge: (v) => set({ plannerCurrentAge: v }),
 
-  plannerStrategyMode: 'tactical',
+  plannerStrategyMode: 'strict_equity',
   setPlannerStrategyMode: (v) => set({ plannerStrategyMode: v }),
 
   plannerTacticalPlan: null,
