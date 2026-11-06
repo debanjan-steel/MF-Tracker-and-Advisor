@@ -747,3 +747,123 @@ def delete_saved_plan(user: dict = Depends(get_current_user)):
     return {"success": True, "message": "Saved plan removed."}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Long-Term Future Goal Investment Plans (Unlimited Saved Goals)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SaveGoalRequest(BaseModel):
+    id: Optional[str] = None
+    goal_name: str
+    target_corpus: float
+    years: float
+    required_monthly_sip: float
+    projected_corpus: Optional[float] = 0.0
+    equity_pct: Optional[float] = 100.0
+    liquid_pct: Optional[float] = 0.0
+    goal_data: Optional[dict] = None
+
+
+@router.get("/saved-goals", summary="Get all saved long-term goal investment plans")
+def get_saved_goals(user: dict = Depends(get_current_user)):
+    """Retrieve all long-term goal investment plans created by the user."""
+    from src.data.storage import get_db
+    import json
+    user_id = user["user_id"]
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, goal_name, target_corpus, years, required_monthly_sip,
+                   projected_corpus, equity_pct, liquid_pct, goal_data, created_at, updated_at
+            FROM user_saved_goals
+            WHERE user_id = ?
+            ORDER BY created_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+
+        results = []
+        for r in rows:
+            try:
+                parsed_data = json.loads(r["goal_data"])
+            except Exception:
+                parsed_data = {}
+
+            results.append({
+                "id": r["id"],
+                "goal_name": r["goal_name"],
+                "target_corpus": r["target_corpus"],
+                "years": r["years"],
+                "required_monthly_sip": r["required_monthly_sip"],
+                "projected_corpus": r["projected_corpus"] or 0.0,
+                "equity_pct": r["equity_pct"] or 100.0,
+                "liquid_pct": r["liquid_pct"] or 0.0,
+                "glide_path": parsed_data.get("glide_path") or parsed_data.get("glide_path_schedule") or [],
+                "milestone_alerts": parsed_data.get("milestone_alerts") or [],
+                "created_at": r["created_at"],
+                "updated_at": r["updated_at"],
+            })
+
+        return results
+
+
+@router.post("/saved-goals", summary="Save a new long-term goal investment plan (unlimited)")
+def save_goal_plan(body: SaveGoalRequest, user: dict = Depends(get_current_user)):
+    """Save a new long-term goal investment plan. Users can save as many long-term goals as they wish."""
+    from src.data.storage import get_db
+    import json
+    import uuid
+
+    user_id = user["user_id"]
+    goal_id = body.id or str(uuid.uuid4())
+    serialized = json.dumps(body.goal_data or {})
+
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_saved_goals (
+                id, user_id, goal_name, target_corpus, years, required_monthly_sip,
+                projected_corpus, equity_pct, liquid_pct, goal_data, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(id) DO UPDATE SET
+                goal_name = excluded.goal_name,
+                target_corpus = excluded.target_corpus,
+                years = excluded.years,
+                required_monthly_sip = excluded.required_monthly_sip,
+                projected_corpus = excluded.projected_corpus,
+                equity_pct = excluded.equity_pct,
+                liquid_pct = excluded.liquid_pct,
+                goal_data = excluded.goal_data,
+                updated_at = datetime('now')
+            """,
+            (
+                goal_id,
+                user_id,
+                body.goal_name,
+                body.target_corpus,
+                body.years,
+                body.required_monthly_sip,
+                body.projected_corpus or 0.0,
+                body.equity_pct or 100.0,
+                body.liquid_pct or 0.0,
+                serialized,
+            ),
+        )
+
+    return {
+        "success": True,
+        "message": f"Long-term goal '{body.goal_name}' saved successfully.",
+        "id": goal_id,
+    }
+
+
+@router.delete("/saved-goals/{goal_id}", summary="Delete a specific long-term goal investment plan")
+def delete_saved_goal(goal_id: str, user: dict = Depends(get_current_user)):
+    """Delete a single long-term goal investment plan."""
+    from src.data.storage import get_db
+    user_id = user["user_id"]
+    with get_db() as conn:
+        conn.execute("DELETE FROM user_saved_goals WHERE id = ? AND user_id = ?", (goal_id, user_id))
+    return {"success": True, "message": "Goal removed."}
+
+
+

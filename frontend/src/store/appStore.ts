@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { TacticalPlan, TimingScore, GoalPlan, SavedInvestmentPlanPayload } from '../types'
+import { TacticalPlan, TimingScore, GoalPlan, SavedInvestmentPlanPayload, SavedGoalPlan } from '../types'
 
 type Tab = 'planner' | 'portfolio' | 'explorer' | 'alerts' | 'settings'
 
@@ -44,6 +44,23 @@ const persistSavedPlanToStorage = (plan: SavedInvestmentPlanPayload | null) => {
     } else {
       localStorage.removeItem('mf_saved_investment_plan')
     }
+  } catch {
+    // ignore
+  }
+}
+
+const loadSavedGoalsFromStorage = (): SavedGoalPlan[] => {
+  try {
+    const raw = localStorage.getItem('mf_saved_goals')
+    return raw ? JSON.parse(raw) : []
+  } catch {
+    return []
+  }
+}
+
+const persistSavedGoalsToStorage = (goals: SavedGoalPlan[]) => {
+  try {
+    localStorage.setItem('mf_saved_goals', JSON.stringify(goals))
   } catch {
     // ignore
   }
@@ -99,6 +116,12 @@ interface AppState {
   savedPlan: SavedInvestmentPlanPayload | null
   setSavedPlan: (plan: SavedInvestmentPlanPayload | null) => void
 
+  // ── Saved Long-Term Goals (Unlimited) ──────────────────────────
+  savedGoals: SavedGoalPlan[]
+  setSavedGoals: (goals: SavedGoalPlan[]) => void
+  addSavedGoal: (goal: SavedGoalPlan) => void
+  removeSavedGoal: (id: string) => void
+
   // ── Watchlist ──────────────────────────────────────────────────
   watchlist: WatchlistItem[]
   addToWatchlist: (item: WatchlistItem) => void
@@ -151,6 +174,33 @@ export const useAppStore = create<AppState>((set) => ({
   setSavedPlan: (plan) => {
     persistSavedPlanToStorage(plan)
     set({ savedPlan: plan })
+  },
+
+  // ── Saved Long-Term Goals (Unlimited) ──────────────────────────
+  savedGoals: loadSavedGoalsFromStorage(),
+  setSavedGoals: (goals) => {
+    persistSavedGoalsToStorage(goals)
+    set({ savedGoals: goals })
+  },
+  addSavedGoal: (goal) => {
+    const current = loadSavedGoalsFromStorage()
+    // If goal already exists, update it, else prepend
+    const existingIdx = current.findIndex((g) => g.id === goal.id)
+    let updated: SavedGoalPlan[]
+    if (existingIdx >= 0) {
+      updated = [...current]
+      updated[existingIdx] = goal
+    } else {
+      updated = [goal, ...current]
+    }
+    persistSavedGoalsToStorage(updated)
+    set({ savedGoals: updated })
+  },
+  removeSavedGoal: (id) => {
+    const current = loadSavedGoalsFromStorage()
+    const updated = current.filter((g) => g.id !== id)
+    persistSavedGoalsToStorage(updated)
+    set({ savedGoals: updated })
   },
 
   // ── Watchlist ──────────────────────────────────────────────────

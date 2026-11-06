@@ -1,6 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
 import { plannerAPI, analyticsAPI } from '../lib/api'
-import { TacticalPlan, TimingScore, SIPRecommendation, GoalPlan, SavedInvestmentPlanPayload } from '../types'
+import {
+  TacticalPlan,
+  TimingScore,
+  SIPRecommendation,
+  GoalPlan,
+  SavedInvestmentPlanPayload,
+  SavedGoalPlan,
+} from '../types'
 import { fmtINR } from '../lib/utils'
 import { useAppStore } from '../store/appStore'
 import {
@@ -19,6 +26,13 @@ import {
   FolderOpen,
   CheckCircle,
   Sparkles,
+  GraduationCap,
+  Home,
+  Car,
+  Plus,
+  Trash2,
+  Briefcase,
+  ShieldCheck,
 } from 'lucide-react'
 
 function getFYSchedule(date = new Date()) {
@@ -484,14 +498,33 @@ export default function PlannerTab() {
   const [showRoadmap, setShowRoadmap] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // ── Saved Investment Plan State & Persistence ──────────────────
+  // ── Mode Switcher: FY Single Plan vs Unlimited Long-Term Goals ──
+  const [plannerMode, setPlannerMode] = useState<'fy_plan' | 'future_goals'>('fy_plan')
+
+  // ── Saved FY Investment Plan State & Persistence (Strictly 1 Active Plan) ──
   const savedPlan = useAppStore((s) => s.savedPlan)
   const setSavedPlan = useAppStore((s) => s.setSavedPlan)
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null)
   const [savingPlan, setSavingPlan] = useState(false)
 
-  // On initial mount, fetch any saved plan from backend if not already in store
+  // ── Saved Long-Term Goals State & Persistence (Unlimited Goals) ──
+  const savedGoals = useAppStore((s) => s.savedGoals)
+  const setSavedGoals = useAppStore((s) => s.setSavedGoals)
+  const addSavedGoal = useAppStore((s) => s.addSavedGoal)
+  const removeSavedGoal = useAppStore((s) => s.removeSavedGoal)
+
+  // Goal Builder State
+  const [goalName, setGoalName] = useState('Child Higher Education')
+  const [goalTargetAmount, setGoalTargetAmount] = useState('5000000')
+  const [goalYearsTimeline, setGoalYearsTimeline] = useState('15')
+  const [currentSavings, setCurrentSavings] = useState('0')
+  const [savingGoal, setSavingGoal] = useState(false)
+  const [goalToast, setGoalToast] = useState<string | null>(null)
+  const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null)
+
+  // On initial mount, fetch any saved FY plan & saved long-term goals from backend
   useEffect(() => {
+    // 1. FY deployment plan (strictly 1 active plan)
     plannerAPI.getSavedPlan()
       .then((res) => {
         if (res.data?.has_saved_plan && res.data?.plan) {
@@ -501,7 +534,176 @@ export default function PlannerTab() {
         }
       })
       .catch(() => {})
+
+    // 2. Saved long-term future goals (unlimited)
+    plannerAPI.getSavedGoals()
+      .then((res) => {
+        if (Array.isArray(res.data)) {
+          setSavedGoals(res.data)
+        }
+      })
+      .catch(() => {})
   }, [])
+
+  // ── Live Math for Goal Builder (12% CAGR Assumed) ──
+  const goalCalc = useMemo(() => {
+    const tNum = Math.max(1000, Number(goalTargetAmount) || 0)
+    const yNum = Math.max(1, Number(goalYearsTimeline) || 1)
+    const sNum = Math.max(0, Number(currentSavings) || 0)
+
+    const annualRate = 0.12
+    const monthlyRate = annualRate / 12
+    const months = Math.max(1, Math.round(yNum * 12))
+
+    // Future value of existing savings
+    const fvSavings = sNum * Math.pow(1 + annualRate, yNum)
+    const netNeeded = Math.max(0, tNum - fvSavings)
+
+    // Formula for required monthly SIP:
+    // NetNeeded = SIP * [((1 + r)^n - 1) / r] * (1 + r)
+    const sipFactor = ((Math.pow(1 + monthlyRate, months) - 1) / monthlyRate) * (1 + monthlyRate)
+    const requiredSip = netNeeded > 0 ? Math.round(netNeeded / sipFactor) : 0
+
+    const projectedCorpus = Math.round(fvSavings + (requiredSip * sipFactor))
+    const totalInvested = sNum + (requiredSip * months)
+    const wealthGain = Math.max(0, projectedCorpus - totalInvested)
+
+    // Dynamic Glide Path Schedule
+    const glidePath: { year: number; equity_pct: number; liquid_pct: number; rationale: string }[] = []
+    const totalYrs = Math.ceil(yNum)
+    for (let yr = 1; yr <= totalYrs; yr++) {
+      const yrsRemaining = yNum - yr
+      let eq = 100
+      let liq = 0
+      let rat = '100% Equity: Maximum compounding runway'
+      if (yrsRemaining <= 0.5) {
+        eq = 5
+        liq = 95
+        rat = '95% Liquid: Target locked in safe assets for withdrawal'
+      } else if (yrsRemaining <= 1) {
+        eq = 25
+        liq = 75
+        rat = '75% Liquid: High capital preservation phase'
+      } else if (yrsRemaining <= 2) {
+        eq = 50
+        liq = 50
+        rat = '50/50 Balanced de-risking mode'
+      } else if (yrsRemaining <= 3) {
+        eq = 70
+        liq = 30
+        rat = '30% Liquid: Initial capital protection hedge'
+      } else if (yrsRemaining <= 5) {
+        eq = 85
+        liq = 15
+        rat = '85% Equity: Growth with conservative buffer'
+      }
+      glidePath.push({
+        year: yr,
+        equity_pct: eq,
+        liquid_pct: liq,
+        rationale: rat,
+      })
+    }
+
+    return {
+      tNum,
+      yNum,
+      sNum,
+      months,
+      netNeeded,
+      requiredSip,
+      totalInvested,
+      projectedCorpus,
+      wealthGain,
+      glidePath,
+    }
+  }, [goalTargetAmount, goalYearsTimeline, currentSavings])
+
+  const handleSaveGoal = async () => {
+    const tNum = Number(goalTargetAmount)
+    const yNum = Number(goalYearsTimeline)
+    const sNum = Number(currentSavings) || 0
+
+    if (!goalName.trim() || tNum <= 0 || yNum <= 0) {
+      setGoalToast('⚠️ Please enter a goal name, target corpus, and timeline.')
+      setTimeout(() => setGoalToast(null), 3500)
+      return
+    }
+
+    setSavingGoal(true)
+    const goalId = `goal_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`
+    const newGoal: SavedGoalPlan = {
+      id: goalId,
+      goal_name: goalName.trim(),
+      target_corpus: tNum,
+      years: yNum,
+      required_monthly_sip: goalCalc.requiredSip,
+      projected_corpus: goalCalc.projectedCorpus,
+      equity_pct: goalCalc.glidePath[0]?.equity_pct ?? 100,
+      liquid_pct: goalCalc.glidePath[0]?.liquid_pct ?? 0,
+      glide_path: goalCalc.glidePath,
+      milestone_alerts: [
+        `25% Milestone: ₹${fmtINR(tNum * 0.25)}`,
+        `50% Milestone: ₹${fmtINR(tNum * 0.5)}`,
+        `75% Milestone: ₹${fmtINR(tNum * 0.75)}`,
+        `Target Goal: ₹${fmtINR(tNum)}`,
+      ],
+      created_at: new Date().toISOString(),
+    }
+
+    addSavedGoal(newGoal)
+
+    try {
+      await plannerAPI.saveGoalPlan({
+        id: goalId,
+        goal_name: newGoal.goal_name,
+        target_corpus: newGoal.target_corpus,
+        years: newGoal.years,
+        required_monthly_sip: newGoal.required_monthly_sip,
+        projected_corpus: newGoal.projected_corpus,
+        equity_pct: newGoal.equity_pct,
+        liquid_pct: newGoal.liquid_pct,
+        goal_data: {
+          glide_path: newGoal.glide_path,
+          milestone_alerts: newGoal.milestone_alerts,
+          current_savings: sNum,
+        },
+      })
+    } catch {
+      // local store already updated
+    } finally {
+      setSavingGoal(false)
+    }
+
+    setGoalToast(`✓ Goal "${newGoal.goal_name}" saved! You now have ${savedGoals.length + 1} saved goals.`)
+    setTimeout(() => setGoalToast(null), 4000)
+  }
+
+  const handleDeleteGoal = async (id: string, name: string) => {
+    removeSavedGoal(id)
+    try {
+      await plannerAPI.deleteSavedGoal(id)
+    } catch {}
+    setGoalToast(`Removed "${name}".`)
+    setTimeout(() => setGoalToast(null), 3000)
+  }
+
+  const getGoalIcon = (name: string) => {
+    const lower = name.toLowerCase()
+    if (lower.includes('child') || lower.includes('education') || lower.includes('college') || lower.includes('school')) {
+      return <GraduationCap className="w-5 h-5 text-indigo-400" />
+    }
+    if (lower.includes('house') || lower.includes('home') || lower.includes('flat') || lower.includes('property')) {
+      return <Home className="w-5 h-5 text-emerald-400" />
+    }
+    if (lower.includes('retire') || lower.includes('fire') || lower.includes('freedom')) {
+      return <Sparkles className="w-5 h-5 text-amber-400" />
+    }
+    if (lower.includes('car') || lower.includes('vehicle') || lower.includes('bike')) {
+      return <Car className="w-5 h-5 text-rose-400" />
+    }
+    return <Target className="w-5 h-5 text-indigo-400" />
+  }
 
   const handleSavePlan = async () => {
     if (!tacticalPlan) return
@@ -543,8 +745,8 @@ export default function PlannerTab() {
 
     setSaveSuccessMsg(
       wasOverwrite
-        ? '✓ Previous plan overwritten! New investment plan saved.'
-        : '✓ Investment plan saved! You can reopen it anytime.'
+        ? '✓ Previous FY plan overwritten! New FY investment plan saved.'
+        : '✓ FY investment plan saved! Stored as your 1 active master FY plan.'
     )
     setTimeout(() => setSaveSuccessMsg(null), 4000)
   }
@@ -642,47 +844,98 @@ export default function PlannerTab() {
 
   return (
     <div className="space-y-4 pb-12">
-      {/* ── Persistent Saved Plan Quick-Access Banner ── */}
-      {savedPlan && (
-        <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/50 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-indigo-950/30">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center shrink-0">
-              <BookmarkCheck className="w-5 h-5 text-indigo-400" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-slate-100">
-                  Saved Investment Plan: ₹{fmtINR(savedPlan.capital)}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/60 border border-indigo-700/60 text-indigo-300 font-mono">
-                  {savedPlan.strategyMode === 'strict_equity' ? 'Pure Equity' : 'Tactical Strategy'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Saved on {savedPlan.savedAt} · Stored permanently across app refreshes
-              </p>
-            </div>
+      {/* ── Top Mode Switcher: Single FY Plan vs Unlimited Long-Term Goals ── */}
+      <div className="flex bg-slate-800/90 rounded-2xl p-1 gap-1 border border-slate-700/60 shadow-lg shadow-slate-950/40">
+        <button
+          type="button"
+          onClick={() => setPlannerMode('fy_plan')}
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            plannerMode === 'fy_plan'
+              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/60 border border-indigo-400/40'
+              : 'text-slate-400 hover:text-slate-200 border border-transparent'
+          }`}
+        >
+          <Calendar className="w-4 h-4 text-indigo-300" />
+          <span>📅 FY Deployment Plan (1 Active Plan)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setPlannerMode('future_goals')}
+          className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+            plannerMode === 'future_goals'
+              ? 'bg-amber-600 text-white shadow-md shadow-amber-950/60 border border-amber-400/40'
+              : 'text-slate-400 hover:text-slate-200 border border-transparent'
+          }`}
+        >
+          <Target className="w-4 h-4 text-amber-300" />
+          <span>🎯 Future Long-Term Goals {savedGoals.length > 0 ? `(${savedGoals.length})` : ''}</span>
+        </button>
+      </div>
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* MODE 1: SINGLE FY DEPLOYMENT PLAN (Strictly 1 Active Plan)          */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {plannerMode === 'fy_plan' && (
+        <div className="space-y-4">
+          {/* Policy Notice: Only 1 FY Plan at a time */}
+          <div className="bg-slate-900/80 border border-indigo-500/30 rounded-xl px-3.5 py-2.5 text-xs text-slate-300 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-sm">
+            <span className="flex items-center gap-2">
+              <span className="text-indigo-400 font-bold">💡 Note:</span>
+              <span>
+                There is <strong>only ONE active saved plan</strong> for investing before the end of the financial year (March 31). Saving a new FY plan will overwrite the previous one.
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setPlannerMode('future_goals')}
+              className="text-xs text-amber-400 hover:text-amber-300 font-semibold underline shrink-0 text-left"
+            >
+              Want multiple saved plans? Go to Future Goals →
+            </button>
           </div>
 
-          <button
-            onClick={openSavedPlan}
-            className="btn-primary text-xs font-bold py-2 px-4 flex items-center justify-center gap-1.5 shrink-0 shadow-md shadow-indigo-950"
-          >
-            <FolderOpen className="w-3.5 h-3.5" /> View Saved Plan
-          </button>
-        </div>
-      )}
+          {/* Persistent Saved Plan Quick-Access Banner */}
+          {savedPlan && (
+            <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/50 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-indigo-950/30">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center shrink-0">
+                  <BookmarkCheck className="w-5 h-5 text-indigo-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-bold text-slate-100">
+                      Saved FY Investment Plan: ₹{fmtINR(savedPlan.capital)}
+                    </span>
+                    <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/60 border border-indigo-700/60 text-indigo-300 font-mono">
+                      {savedPlan.strategyMode === 'strict_equity' ? 'Pure Equity' : 'Tactical Strategy'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Saved on {savedPlan.savedAt} · Stored permanently across app refreshes
+                  </p>
+                </div>
+              </div>
 
-      {/* ── STEP 1: Total Capital Input Card ───────────────────────────── */}
-      <div className="card border-indigo-600/40 shadow-lg shadow-indigo-950/20">
-        <div className="flex items-center justify-between mb-3">
-          <p className="section-title flex items-center gap-2 mb-0">
-            <TrendingUp className="w-5 h-5 text-indigo-400" /> Tactical Investment Planner
-          </p>
-          <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-mono border border-slate-700">
-            {fy.fyLabel} · {fy.monthsRemainingInFY} mos till Mar 31
-          </span>
-        </div>
+              <button
+                onClick={openSavedPlan}
+                className="btn-primary text-xs font-bold py-2 px-4 flex items-center justify-center gap-1.5 shrink-0 shadow-md shadow-indigo-950"
+              >
+                <FolderOpen className="w-3.5 h-3.5" /> View Saved Plan
+              </button>
+            </div>
+          )}
+
+          {/* ── STEP 1: Total Capital Input Card ───────────────────────────── */}
+          <div className="card border-indigo-600/40 shadow-lg shadow-indigo-950/20">
+            <div className="flex items-center justify-between mb-3">
+              <p className="section-title flex items-center gap-2 mb-0">
+                <TrendingUp className="w-5 h-5 text-indigo-400" /> Tactical FY Investment Planner
+              </p>
+              <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 font-mono border border-slate-700">
+                {fy.fyLabel} · {fy.monthsRemainingInFY} mos till Mar 31
+              </span>
+            </div>
 
         <p className="text-xs text-slate-400 mb-3">
           Enter the lump sum or total money you want to invest. Our quant engine predicts market dips, macro events, and allocates into high-conviction mutual funds before the end of the financial year.
@@ -1273,6 +1526,426 @@ export default function PlannerTab() {
               ))}
             </div>
           )}
+        </div>
+      )}
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {/* MODE 2: FUTURE LONG-TERM GOALS (UNLIMITED SAVED GOALS)              */}
+      {/* ═══════════════════════════════════════════════════════════════════ */}
+      {plannerMode === 'future_goals' && (
+        <div className="space-y-4">
+          {/* Policy Banner: Unlimited Long-Term Goals */}
+          <div className="bg-amber-950/30 border border-amber-600/40 rounded-2xl p-4 shadow-lg shadow-amber-950/20">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-600/20 border border-amber-500/40 text-amber-300 flex items-center justify-center shrink-0">
+                <Target className="w-5 h-5 text-amber-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-amber-200">
+                  Unlimited Future Long-Term Goals
+                </h3>
+                <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                  Unlike FY plans which have a single master deployment, you can <strong>create, calculate, and save as many future long-term goals as you want</strong> (Retirement, Child Higher Education, House Purchase, Car, Wealth Legacy). Each saved goal computes its own SIP target, wealth gain, and systematic de-risking glide path.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Toast feedback */}
+          {goalToast && (
+            <div className="bg-emerald-950/90 border border-emerald-600/70 rounded-xl p-3 text-xs text-emerald-300 font-semibold flex items-center gap-2 animate-in fade-in">
+              <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{goalToast}</span>
+            </div>
+          )}
+
+          {/* Goal Builder Card */}
+          <div className="card border-amber-600/40 shadow-xl shadow-amber-950/20">
+            <div className="flex items-center justify-between mb-2">
+              <p className="section-title flex items-center gap-2 mb-0">
+                <Plus className="w-5 h-5 text-amber-400" /> Create & Save a New Long-Term Goal
+              </p>
+              <span className="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-amber-300 font-mono border border-slate-700">
+                12% CAGR Growth Engine
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mb-3">
+              Select a popular life goal preset below or enter your own custom goal details:
+            </p>
+
+            {/* Presets Chips */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
+              {[
+                { name: 'Child Higher Education', icon: GraduationCap, target: '5000000', years: '15' },
+                { name: 'House Down Payment', icon: Home, target: '3500000', years: '7' },
+                { name: 'Early Retirement / FIRE', icon: Sparkles, target: '30000000', years: '20' },
+                { name: 'Dream Asset / Car', icon: Car, target: '2000000', years: '5' },
+                { name: 'Family Wealth Legacy', icon: ShieldCheck, target: '10000000', years: '10' },
+              ].map((p) => {
+                const isSelected = goalName === p.name
+                const Icon = p.icon
+                return (
+                  <button
+                    key={p.name}
+                    type="button"
+                    onClick={() => {
+                      setGoalName(p.name)
+                      setGoalTargetAmount(p.target)
+                      setGoalYearsTimeline(p.years)
+                    }}
+                    className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                      isSelected
+                        ? 'bg-amber-600/20 border-amber-500 text-amber-200 shadow-md shadow-amber-950/40'
+                        : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700'
+                    }`}
+                  >
+                    <Icon className={`w-4 h-4 mb-1.5 ${isSelected ? 'text-amber-400' : 'text-slate-500'}`} />
+                    <div>
+                      <p className={`text-xs font-bold leading-tight ${isSelected ? 'text-white' : 'text-slate-300'}`}>
+                        {p.name}
+                      </p>
+                      <p className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                        ₹{fmtINR(Number(p.target))} · {p.years}Y
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Form Inputs */}
+            <div className="space-y-3 pt-3 border-t border-slate-800">
+              {/* Goal Name */}
+              <div>
+                <label className="text-xs font-semibold text-slate-200 block mb-1">
+                  Goal Name / Objective
+                </label>
+                <input
+                  className="input text-sm font-semibold text-white"
+                  type="text"
+                  value={goalName}
+                  onChange={(e) => setGoalName(e.target.value)}
+                  placeholder="e.g. Child's Overseas Masters, 3BHK Home, Retirement by 50"
+                />
+              </div>
+
+              {/* Target & Timeline */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Target Corpus */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-slate-200">
+                      Target Corpus (₹)
+                    </label>
+                    <span className="text-xs font-bold text-amber-400 font-mono">
+                      {fmtINR(Number(goalTargetAmount) || 0)}
+                    </span>
+                  </div>
+                  <input
+                    className="input text-base font-bold text-white py-2"
+                    type="number"
+                    value={goalTargetAmount}
+                    onChange={(e) => setGoalTargetAmount(e.target.value)}
+                    placeholder="5000000"
+                  />
+                  <div className="flex gap-1.5 mt-1.5 overflow-x-auto pb-0.5">
+                    {['1500000', '3500000', '5000000', '10000000', '30000000'].map((amt) => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setGoalTargetAmount(amt)}
+                        className={`text-[10px] px-2 py-0.5 rounded border ${
+                          goalTargetAmount === amt
+                            ? 'bg-amber-600 text-white border-amber-500 font-bold'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        {fmtINR(Number(amt))}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Horizon in Years */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-semibold text-slate-200">
+                      Time Horizon (Years)
+                    </label>
+                    <span className="text-xs font-bold text-amber-400 font-mono">
+                      {goalYearsTimeline} Years ({Math.round(Number(goalYearsTimeline) * 12 || 0)} Months)
+                    </span>
+                  </div>
+                  <input
+                    className="input text-base font-bold text-white py-2"
+                    type="number"
+                    min={1}
+                    max={40}
+                    value={goalYearsTimeline}
+                    onChange={(e) => setGoalYearsTimeline(e.target.value)}
+                    placeholder="15"
+                  />
+                  <div className="flex gap-1.5 mt-1.5">
+                    {['3', '5', '7', '10', '15', '20', '25'].map((yr) => (
+                      <button
+                        key={yr}
+                        type="button"
+                        onClick={() => setGoalYearsTimeline(yr)}
+                        className={`flex-1 text-[10px] py-0.5 rounded border text-center ${
+                          goalYearsTimeline === yr
+                            ? 'bg-amber-600 text-white border-amber-500 font-bold'
+                            : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                        }`}
+                      >
+                        {yr}Y
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Current Existing Savings (Optional) */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-xs font-semibold text-slate-400">
+                    Already Saved / Initial Lump Sum (Optional)
+                  </label>
+                  <span className="text-xs text-slate-400 font-mono">
+                    {fmtINR(Number(currentSavings) || 0)}
+                  </span>
+                </div>
+                <input
+                  className="input text-xs text-slate-200"
+                  type="number"
+                  value={currentSavings}
+                  onChange={(e) => setCurrentSavings(e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+
+              {/* Real-time Calculation Result Box */}
+              <div className="bg-slate-950/80 rounded-2xl p-4 border border-amber-600/30 mt-3 shadow-inner">
+                <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+                  <span className="text-xs font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Plan Projections (12% CAGR)
+                  </span>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    Compounded over {goalCalc.yNum} Yrs
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block font-medium">Required Monthly SIP</span>
+                    <span className="text-base font-black text-amber-400 font-mono block mt-0.5">
+                      {fmtINR(goalCalc.requiredSip)}/mo
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block font-medium">Target Maturity Corpus</span>
+                    <span className="text-base font-black text-white font-mono block mt-0.5">
+                      {fmtINR(goalCalc.tNum)}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block font-medium">Total Cash Invested</span>
+                    <span className="text-base font-bold text-slate-300 font-mono block mt-0.5">
+                      {fmtINR(goalCalc.totalInvested)}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-900/90 rounded-xl p-2.5 border border-slate-800">
+                    <span className="text-[10px] text-slate-400 block font-medium">Wealth Multiplier / Gain</span>
+                    <span className="text-base font-black text-emerald-400 font-mono block mt-0.5">
+                      +{fmtINR(goalCalc.wealthGain)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Initial Glide-Path Strategy Pill */}
+                <div className="mt-3 p-2.5 bg-slate-900/70 rounded-xl border border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Starting Asset Allocation:</span>
+                  <span className="font-bold text-amber-300 px-2 py-0.5 rounded bg-amber-950/60 border border-amber-800/60 font-mono">
+                    {goalCalc.glidePath[0]?.equity_pct ?? 100}% Equity · {goalCalc.glidePath[0]?.liquid_pct ?? 0}% Liquid
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button: Save This Long-Term Goal */}
+              <button
+                type="button"
+                onClick={handleSaveGoal}
+                disabled={savingGoal}
+                className="w-full py-3.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-950/50 transition-all"
+              >
+                <Bookmark className="w-4 h-4" />
+                {savingGoal ? 'Saving Goal to Database…' : `💾 Save "${goalName}" as a Long-Term Goal`}
+              </button>
+            </div>
+          </div>
+
+          {/* ── Saved Goals List (Unlimited Cards) ────────────────────────── */}
+          <div className="space-y-3 pt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-amber-400" />
+                  Your Saved Long-Term Goals ({savedGoals.length})
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  All your active financial objectives stored safely. You can add as many goals as needed.
+                </p>
+              </div>
+            </div>
+
+            {savedGoals.length === 0 ? (
+              <div className="card text-center py-10 border-dashed border-slate-800">
+                <Target className="w-10 h-10 text-amber-400/40 mx-auto mb-2" />
+                <h4 className="text-sm font-semibold text-slate-300">No Long-Term Goals Saved Yet</h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                  Choose a preset above (Retirement, Higher Education, House, Car) or enter your target details, then click <strong>Save Goal</strong> to track unlimited investment plans.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {savedGoals.map((g) => {
+                  const isExpanded = expandedGoalId === g.id
+                  const icon = getGoalIcon(g.goal_name)
+                  return (
+                    <div
+                      key={g.id}
+                      className="card bg-slate-900 border-slate-800 hover:border-slate-700 transition-all p-4 shadow-lg shadow-slate-950/40"
+                    >
+                      {/* Goal Header */}
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+                            {icon}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-sm font-bold text-white truncate">{g.goal_name}</h4>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-950/80 border border-amber-700/60 text-amber-300 font-mono font-bold">
+                                Target: ₹{fmtINR(g.target_corpus)}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              {g.years} Year Horizon · Saved on {new Date(g.created_at || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Delete Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGoal(g.id, g.goal_name)}
+                          className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/50 text-slate-400 hover:text-rose-400 border border-slate-700/80 hover:border-rose-800/60 transition-colors"
+                          title="Delete this saved goal"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      {/* 4-Metric Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-center">
+                          <span className="text-[10px] text-slate-400 block">Required Monthly SIP</span>
+                          <span className="text-sm font-bold text-amber-400 font-mono block mt-0.5">
+                            {fmtINR(g.required_monthly_sip)}/mo
+                          </span>
+                        </div>
+                        <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-center">
+                          <span className="text-[10px] text-slate-400 block">Target Amount</span>
+                          <span className="text-sm font-bold text-slate-200 font-mono block mt-0.5">
+                            {fmtINR(g.target_corpus)}
+                          </span>
+                        </div>
+                        <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-center">
+                          <span className="text-[10px] text-slate-400 block">Projected Corpus</span>
+                          <span className="text-sm font-bold text-emerald-400 font-mono block mt-0.5">
+                            {fmtINR(g.projected_corpus || g.target_corpus)}
+                          </span>
+                        </div>
+                        <div className="bg-slate-950/70 p-2.5 rounded-xl border border-slate-800/80 text-center">
+                          <span className="text-[10px] text-slate-400 block">Time Horizon</span>
+                          <span className="text-sm font-bold text-indigo-300 font-mono block mt-0.5">
+                            {g.years} Years
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Allocation badge & Glide Path Accordion Button */}
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs">
+                        <span className="text-[11px] text-slate-400">
+                          Current Allocation:{' '}
+                          <strong className="text-slate-200">
+                            {g.equity_pct || 100}% Equity / {g.liquid_pct || 0}% Liquid
+                          </strong>
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => setExpandedGoalId(isExpanded ? null : g.id)}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 transition-colors"
+                        >
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          {isExpanded ? 'Hide Glide-Path' : 'View Year-by-Year Glide-Path'}
+                        </button>
+                      </div>
+
+                      {/* Expanded Glide Path */}
+                      {isExpanded && g.glide_path && g.glide_path.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-slate-800 space-y-2 bg-slate-950/50 p-3 rounded-xl border border-slate-800">
+                          <p className="text-[11px] font-bold text-amber-300 uppercase tracking-wider mb-1.5 flex items-center gap-1">
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            Systematic De-Risking Schedule (Glide Path)
+                          </p>
+                          <p className="text-[10px] text-slate-400 mb-2">
+                            To protect your wealth as your goal deadline approaches, our quant model systematically sweeps accumulated equity returns into safe liquid/arbitrage funds.
+                          </p>
+
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                            {g.glide_path.map((step) => (
+                              <div
+                                key={step.year}
+                                className="flex items-center gap-2 text-xs bg-slate-900 rounded-lg px-2.5 py-1.5 border border-slate-800/60"
+                              >
+                                <span className="text-slate-400 w-14 shrink-0 font-mono text-[11px]">
+                                  Year {step.year}
+                                </span>
+                                <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden flex">
+                                  <div
+                                    className="h-full bg-amber-500 rounded-l-full transition-all"
+                                    style={{ width: `${step.equity_pct}%` }}
+                                    title={`${step.equity_pct}% Equity`}
+                                  />
+                                  <div
+                                    className="h-full bg-indigo-500 rounded-r-full transition-all"
+                                    style={{ width: `${step.liquid_pct}%` }}
+                                    title={`${step.liquid_pct}% Liquid`}
+                                  />
+                                </div>
+                                <span className="text-[11px] font-mono text-amber-300 w-14 text-right font-semibold shrink-0">
+                                  {step.equity_pct}% Eq
+                                </span>
+                                <span className="text-[11px] font-mono text-indigo-300 w-14 text-right font-semibold shrink-0">
+                                  {step.liquid_pct}% Liq
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

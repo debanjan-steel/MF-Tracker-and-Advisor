@@ -261,3 +261,18 @@ export interface SavedInvestmentPlanPayload {
   savedAt: string
 }
 
+export interface SavedGoalPlan {
+  id: string
+  goal_name: string
+  target_corpus: number
+  years: number
+  required_monthly_sip: number
+  projected_corpus: number
+  equity_pct: number
+  liquid_pct: number
+  glide_path: GlidePathStep[]
+  milestone_alerts?: string[]
+  created_at?: string
+  updated_at?: string
+}
+

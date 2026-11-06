@@ -152,12 +152,29 @@ CREATE TABLE IF NOT EXISTS user_saved_plans (
     updated_at          TEXT DEFAULT (datetime('now'))
 );
 
+-- User saved long-term future goals (users can create as many as they want)
+CREATE TABLE IF NOT EXISTS user_saved_goals (
+    id                  TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    goal_name           TEXT NOT NULL,
+    target_corpus       REAL NOT NULL,
+    years               REAL NOT NULL,
+    required_monthly_sip REAL NOT NULL,
+    projected_corpus    REAL DEFAULT 0,
+    equity_pct          REAL DEFAULT 100,
+    liquid_pct          REAL DEFAULT 0,
+    goal_data           TEXT NOT NULL,          -- JSON serialized glide path & milestones
+    created_at          TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT DEFAULT (datetime('now'))
+);
+
 -- Index for fast time-series queries
 CREATE INDEX IF NOT EXISTS idx_nav_scheme_date  ON nav_history(scheme_code, nav_date DESC);
 CREATE INDEX IF NOT EXISTS idx_macro_ticker_date ON macro_history(ticker, price_date DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_status ON prediction_ledger(status, target_date);
 CREATE INDEX IF NOT EXISTS idx_user_holdings_user ON user_holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_alerts_user ON user_alerts(user_id, is_dismissed, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_saved_goals ON user_saved_goals(user_id, created_at DESC);
 """
 
 

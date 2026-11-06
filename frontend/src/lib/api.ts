@@ -97,6 +97,9 @@ export const plannerAPI = {
   savePlan: (capital: number, planData: any) =>
     api.post('/planner/saved-plan', { capital, plan_data: planData }),
   deleteSavedPlan: () => api.delete('/planner/saved-plan'),
+  getSavedGoals: () => api.get('/planner/saved-goals'),
+  saveGoalPlan: (goalData: any) => api.post('/planner/saved-goals', goalData),
+  deleteSavedGoal: (goalId: string) => api.delete(`/planner/saved-goals/${goalId}`),
 }
 
 // ── Portfolio ────────────────────────────────────────────────────────
