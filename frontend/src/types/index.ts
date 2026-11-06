@@ -3,9 +3,11 @@
 export interface SchemeInfo {
   scheme_code: number
   scheme_name: string
-  fund_house: string
-  scheme_type: string
-  scheme_category: string
+  fund_house?: string
+  scheme_type?: string
+  scheme_category?: string
+  schemeCode?: number
+  schemeName?: string
 }
 
 export interface NAVRecord {

@@ -23,8 +23,27 @@ router = APIRouter()
 
 
 def _get_nav_or_404(scheme_code: int):
-    """Helper: load NAV from SQLite or raise 404."""
+    """Helper: load NAV from SQLite or fetch on-demand."""
     df = get_nav_history_df(scheme_code)
+    if df.empty:
+        try:
+            from src.data.data_manager import data_manager
+            from src.data.storage import upsert_schemes, bulk_insert_nav_history
+            nav_data = data_manager.get_nav_history(scheme_code)
+            if nav_data and nav_data.get("data"):
+                meta = nav_data.get("meta", {})
+                upsert_schemes([{
+                    "scheme_code": scheme_code,
+                    "scheme_name": meta.get("scheme_name", f"Scheme {scheme_code}"),
+                    "fund_house": meta.get("fund_house", ""),
+                    "scheme_type": meta.get("scheme_type", ""),
+                    "scheme_category": meta.get("scheme_category", ""),
+                }])
+                bulk_insert_nav_history(scheme_code, nav_data["data"])
+                df = get_nav_history_df(scheme_code)
+        except Exception:
+            pass
+
     if df.empty:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -94,7 +113,31 @@ def fund_scorecard(scheme_code: int, user: dict = Depends(get_current_user)):
     Max Drawdown, Volatility, Alpha (if benchmark available).
     """
     nav = _get_nav_or_404(scheme_code)
-    return full_scorecard(nav)
+    card = full_scorecard(nav)
+
+    # Calculate overall score (0-100) & Grade
+    cagr_3y = card.get("cagr_3y") or card.get("cagr_1y") or 0.12
+    sharpe = card.get("sharpe") or 1.0
+    max_dd = abs(card.get("max_drawdown") or 0.20)
+    score = min(100, max(10, int((cagr_3y * 100 * 1.5) + (sharpe * 25) + (100 - max_dd * 100) * 0.2)))
+    if score >= 75:
+        grade = "A+"
+    elif score >= 65:
+        grade = "A"
+    elif score >= 50:
+        grade = "B"
+    elif score >= 40:
+        grade = "C"
+    else:
+        grade = "D"
+
+    from src.data.storage import get_scheme
+    meta = get_scheme(scheme_code) or {}
+    card["scheme_code"] = scheme_code
+    card["scheme_name"] = meta.get("scheme_name", f"Scheme {scheme_code}")
+    card["overall_score"] = score
+    card["grade"] = grade
+    return card
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -48,16 +48,26 @@ export default function ExplorerTab() {
     }
   }
 
-  const selectFund = async (scheme: SchemeInfo) => {
-    setSelected(scheme)
+  const selectFund = async (scheme: any) => {
+    const code = Number(scheme.scheme_code || scheme.schemeCode)
+    const name = scheme.scheme_name || scheme.schemeName || `Scheme ${code}`
+    const normalized: SchemeInfo = {
+      ...scheme,
+      scheme_code: code,
+      scheme_name: name,
+    }
+    setSelected(normalized)
     setResults([])
-    setQuery(scheme.scheme_name)
+    setQuery(name)
+    setScorecard(null)
+    setNavData([])
+    setBacktestData(null)
     setLoadingFund(true)
     try {
       const [sc, nav, bt] = await Promise.allSettled([
-        analyticsAPI.scorecard(scheme.scheme_code),
-        fundsAPI.navHistory(scheme.scheme_code, 1.0),
-        analyticsAPI.backtest(scheme.scheme_code, 5000, 5),
+        analyticsAPI.scorecard(code),
+        fundsAPI.navHistory(code, 1.0),
+        analyticsAPI.backtest(code, 5000, 5),
       ])
       if (sc.status === 'fulfilled') setScorecard(sc.value.data)
       if (nav.status === 'fulfilled') {
@@ -131,23 +141,37 @@ export default function ExplorerTab() {
               {searching && (
                 <p className="text-xs text-slate-500 text-center py-2 animate-pulse">Searching…</p>
               )}
-              {results.slice(0, 20).map((r) => (
-                <button
-                  key={r.scheme_code}
-                  onClick={() => selectFund(r)}
-                  className="w-full text-left px-4 py-3 hover:bg-slate-700 border-b border-slate-700/50 last:border-0 transition-colors"
-                >
-                  <p className="text-sm font-medium text-slate-100 leading-tight">{r.scheme_name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{r.fund_house} · {r.scheme_category}</p>
-                </button>
-              ))}
+              {results.slice(0, 20).map((r: any) => {
+                const code = r.scheme_code || r.schemeCode
+                const name = r.scheme_name || r.schemeName || `Scheme ${code}`
+                const subtitle = [r.fund_house, r.scheme_category].filter(Boolean).join(' · ')
+                return (
+                  <button
+                    key={code}
+                    onClick={() => selectFund(r)}
+                    className="w-full text-left px-4 py-3 hover:bg-slate-700 border-b border-slate-700/50 last:border-0 transition-colors"
+                  >
+                    <p className="text-sm font-medium text-slate-100 leading-tight">{name}</p>
+                    {subtitle && <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Loading Fund Details */}
+          {loadingFund && (
+            <div className="card text-center py-8">
+              <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+              <p className="text-sm text-slate-300 font-medium">Fetching Fund NAV History & Analytics…</p>
+              <p className="text-xs text-slate-500 mt-1">Downloading historical records from MFAPI & computing scorecard</p>
             </div>
           )}
 
           {/* Scorecard */}
           {scorecard && (
             <div className="card">
-              <p className="section-title">{scorecard.scheme_name?.slice(0, 40)}…</p>
+              <p className="section-title">{(selected?.scheme_name || scorecard.scheme_name || 'Fund Performance')?.slice(0, 60)}</p>
               <div className="grid grid-cols-3 gap-2 mb-3">
                 <MetricBox label="CAGR 1Y" value={fmtPct(scorecard.cagr_1y)} color={scorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
                 <MetricBox label="CAGR 3Y" value={fmtPct(scorecard.cagr_3y)} color={scorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
@@ -161,8 +185,8 @@ export default function ExplorerTab() {
               </div>
               <div className="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-3">
                 <span className="text-slate-400 text-sm">Overall Grade</span>
-                <span className={`text-2xl font-black ${scorecard.overall_score > 65 ? 'text-green-400' : scorecard.overall_score > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                  {scorecard.grade}
+                <span className={`text-2xl font-black ${(scorecard.overall_score ?? 60) > 65 ? 'text-green-400' : (scorecard.overall_score ?? 60) > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {scorecard.grade || 'A'}
                 </span>
               </div>
             </div>

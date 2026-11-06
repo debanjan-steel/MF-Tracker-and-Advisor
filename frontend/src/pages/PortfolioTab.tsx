@@ -79,7 +79,13 @@ export default function PortfolioTab() {
       setSearchLoading(true)
       try {
         const { data } = await fundsAPI.search(q)
-        setFundSuggestions(Array.isArray(data) ? data.slice(0, 8) : [])
+        const raw = data?.results || (Array.isArray(data) ? data : [])
+        const normalized: FundSearchResult[] = raw.map((item: any) => ({
+          scheme_code: Number(item.scheme_code || item.schemeCode),
+          scheme_name: item.scheme_name || item.schemeName,
+          category: item.category || item.scheme_category || 'Equity'
+        }))
+        setFundSuggestions(normalized.slice(0, 8))
       } catch { setFundSuggestions([]) }
       finally { setSearchLoading(false) }
     }, 300)
