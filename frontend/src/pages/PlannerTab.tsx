@@ -514,11 +514,11 @@ export default function PlannerTab() {
   const addSavedGoal = useAppStore((s) => s.addSavedGoal)
   const removeSavedGoal = useAppStore((s) => s.removeSavedGoal)
 
-  // Goal Builder State
-  const [goalName, setGoalName] = useState('Child Higher Education')
-  const [goalTargetAmount, setGoalTargetAmount] = useState('5000000')
-  const [goalYearsTimeline, setGoalYearsTimeline] = useState('15')
-  const [currentSavings, setCurrentSavings] = useState('0')
+  // Goal Builder State (Initialized clean at 0, populated on user input or preset click)
+  const [goalName, setGoalName] = useState('')
+  const [goalTargetAmount, setGoalTargetAmount] = useState('')
+  const [goalYearsTimeline, setGoalYearsTimeline] = useState('')
+  const [currentSavings, setCurrentSavings] = useState('')
   const [savingGoal, setSavingGoal] = useState(false)
   const [goalToast, setGoalToast] = useState<string | null>(null)
   const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null)
@@ -578,9 +578,24 @@ export default function PlannerTab() {
 
   // ── Live Math for Goal Builder (12% CAGR Assumed) ──
   const goalCalc = useMemo(() => {
-    const tNum = Math.max(1000, Number(goalTargetAmount) || 0)
-    const yNum = Math.max(1, Number(goalYearsTimeline) || 1)
+    const tNum = Math.max(0, Number(goalTargetAmount) || 0)
+    const yNum = Math.max(0, Number(goalYearsTimeline) || 0)
     const sNum = Math.max(0, Number(currentSavings) || 0)
+
+    if (tNum <= 0 || yNum <= 0) {
+      return {
+        tNum,
+        yNum,
+        sNum,
+        months: 0,
+        netNeeded: 0,
+        requiredSip: 0,
+        totalInvested: sNum,
+        projectedCorpus: sNum,
+        wealthGain: 0,
+        glidePath: [],
+      }
+    }
 
     const annualRate = 0.12
     const monthlyRate = annualRate / 12
@@ -1738,7 +1753,7 @@ export default function PlannerTab() {
                     type="number"
                     value={goalTargetAmount}
                     onChange={(e) => setGoalTargetAmount(e.target.value)}
-                    placeholder="5000000"
+                    placeholder="0"
                   />
                   <div className="flex gap-1.5 mt-1.5 overflow-x-auto pb-0.5">
                     {['1500000', '3500000', '5000000', '10000000', '30000000'].map((amt) => (
@@ -1765,7 +1780,7 @@ export default function PlannerTab() {
                       Time Horizon (Years)
                     </label>
                     <span className="text-xs font-bold text-amber-400 font-mono">
-                      {goalYearsTimeline} Years ({Math.round(Number(goalYearsTimeline) * 12 || 0)} Months)
+                      {goalYearsTimeline ? `${goalYearsTimeline} Years (${Math.round(Number(goalYearsTimeline) * 12 || 0)} Months)` : '0 Years'}
                     </span>
                   </div>
                   <input
@@ -1775,7 +1790,7 @@ export default function PlannerTab() {
                     max={40}
                     value={goalYearsTimeline}
                     onChange={(e) => setGoalYearsTimeline(e.target.value)}
-                    placeholder="15"
+                    placeholder="0"
                   />
                   <div className="flex gap-1.5 mt-1.5">
                     {['3', '5', '7', '10', '15', '20', '25'].map((yr) => (
@@ -1873,7 +1888,7 @@ export default function PlannerTab() {
                 className="w-full py-3.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-amber-950/50 transition-all"
               >
                 <Bookmark className="w-4 h-4" />
-                {savingGoal ? 'Saving Goal to Database…' : `💾 Save "${goalName}" as a Long-Term Goal`}
+                {savingGoal ? 'Saving Goal to Database…' : `💾 Save ${goalName.trim() ? `"${goalName.trim()}"` : 'This Goal'} as a Long-Term Goal`}
               </button>
             </div>
           </div>
