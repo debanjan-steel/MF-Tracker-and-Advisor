@@ -156,7 +156,7 @@ export interface AlertSettings {
 
 export interface InAppAlert {
   id: string
-  alert_type: 'entry' | 'macro' | 'sip' | 'dud' | 'portfolio_empty'
+  alert_type: 'entry' | 'macro' | 'sip' | 'dud' | 'portfolio_empty' | 'plan_update'
   title: string
   message: string
   severity: 'SUCCESS' | 'WARNING' | 'INFO' | 'DANGER'

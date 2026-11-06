@@ -109,6 +109,23 @@ export default function AlertsTab() {
   }
 
   const getSeverityBadge = (severity: string, type: string) => {
+    if (type === 'plan_update') {
+      return {
+        badge: 'bg-purple-950/80 border-purple-700/60 text-purple-300',
+        border: 'border-purple-600/50 bg-slate-900/90 hover:border-purple-500/80',
+        icon: <Sparkles className="w-4 h-4 text-purple-400" />,
+        label: 'PLAN CHANGELOG (14-DAY RETENTION)',
+      }
+    }
+    if (type === 'dud') {
+      return {
+        badge: 'bg-red-950/80 border-red-700/60 text-red-300',
+        border: 'border-red-600/50 bg-slate-900/90 hover:border-red-500/80',
+        icon: <ShieldAlert className="w-4 h-4 text-red-400" />,
+        label: 'DUD / TAKE MONEY OUT',
+      }
+    }
+
     switch (severity) {
       case 'SUCCESS':
         return {
@@ -129,7 +146,7 @@ export default function AlertsTab() {
           badge: 'bg-red-950/80 border-red-700/60 text-red-300',
           border: 'border-red-600/50 bg-slate-900/90 hover:border-red-500/80',
           icon: <ShieldAlert className="w-4 h-4 text-red-400" />,
-          label: 'HOLDING RED FLAG',
+          label: 'HOLDING RED FLAG / DUD',
         }
       default:
         return {

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
-import { plannerAPI, analyticsAPI } from '../lib/api'
+import { plannerAPI, analyticsAPI, alertsAPI } from '../lib/api'
 import {
   TacticalPlan,
   TimingScore,
@@ -7,6 +7,7 @@ import {
   GoalPlan,
   SavedInvestmentPlanPayload,
   SavedGoalPlan,
+  InAppAlert,
 } from '../types'
 import { fmtINR } from '../lib/utils'
 import { useAppStore } from '../store/appStore'
@@ -522,6 +523,9 @@ export default function PlannerTab() {
   const [goalToast, setGoalToast] = useState<string | null>(null)
   const [expandedGoalId, setExpandedGoalId] = useState<string | null>(null)
 
+  // ── Plan Changelogs (Stored for 14 days or until deleted) ──
+  const [changelogs, setChangelogs] = useState<InAppAlert[]>([])
+
   // On initial mount, fetch any saved FY plan & saved long-term goals from backend
   useEffect(() => {
     // 1. FY deployment plan (strictly 1 active plan)
@@ -543,7 +547,34 @@ export default function PlannerTab() {
         }
       })
       .catch(() => {})
+
+    // 3. Plan changelogs / market shifts (retained for 14 days)
+    alertsAPI.getFeed()
+      .then((res) => {
+        if (Array.isArray(res.data)) {
+          const updates = res.data.filter((a: InAppAlert) => a.alert_type === 'plan_update')
+          setChangelogs(updates)
+        }
+      })
+      .catch(() => {})
   }, [])
+
+  const handleDeleteChangelog = async (id: string) => {
+    setChangelogs((prev) => prev.filter((c) => c.id !== id))
+    try {
+      await alertsAPI.deleteAlert(id)
+    } catch {}
+  }
+
+  const handleDeleteSavedPlan = async () => {
+    if (!window.confirm('Are you sure you want to delete your active saved FY deployment plan?')) return
+    setSavedPlan(null)
+    try {
+      await plannerAPI.deleteSavedPlan()
+    } catch {}
+    setSaveSuccessMsg('✓ Saved FY deployment plan deleted.')
+    setTimeout(() => setSaveSuccessMsg(null), 3500)
+  }
 
   // ── Live Math for Goal Builder (12% CAGR Assumed) ──
   const goalCalc = useMemo(() => {
@@ -873,6 +904,57 @@ export default function PlannerTab() {
         </button>
       </div>
 
+      {/* ── Plan Changelog & Market Adjustments (14-Day Retention) ── */}
+      {changelogs.length > 0 && (
+        <div className="bg-purple-950/20 border border-purple-600/40 rounded-2xl p-4 shadow-lg shadow-purple-950/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-purple-400" />
+              <h3 className="text-xs font-bold text-purple-200 uppercase tracking-wider">
+                Plan Changelog & Market Shifts ({changelogs.length} Active)
+              </h3>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">
+              Auto-purged after 14 days or on delete
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            {changelogs.map((cl) => (
+              <div
+                key={cl.id}
+                className="bg-slate-900/90 border border-purple-700/40 rounded-xl p-3 text-xs flex items-start justify-between gap-3"
+              >
+                <div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="font-bold text-slate-100">{cl.title}</span>
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-purple-900/60 text-purple-300 font-mono">
+                      {cl.days_remaining}d remaining
+                    </span>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed whitespace-pre-line text-[11px]">
+                    {cl.message}
+                  </p>
+                  {cl.action_text && (
+                    <p className="text-indigo-400 text-[11px] mt-1 font-medium">
+                      {cl.action_text}
+                    </p>
+                  )}
+                </div>
+
+                <button
+                  onClick={() => handleDeleteChangelog(cl.id)}
+                  className="p-1 text-slate-400 hover:text-rose-400 rounded-lg hover:bg-rose-950/40 transition-colors shrink-0"
+                  title="Dismiss / Delete changelog"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ═══════════════════════════════════════════════════════════════════ */}
       {/* MODE 1: SINGLE FY DEPLOYMENT PLAN (Strictly 1 Active Plan)          */}
       {/* ═══════════════════════════════════════════════════════════════════ */}
@@ -917,12 +999,21 @@ export default function PlannerTab() {
                 </div>
               </div>
 
-              <button
-                onClick={openSavedPlan}
-                className="btn-primary text-xs font-bold py-2 px-4 flex items-center justify-center gap-1.5 shrink-0 shadow-md shadow-indigo-950"
-              >
-                <FolderOpen className="w-3.5 h-3.5" /> View Saved Plan
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={openSavedPlan}
+                  className="btn-primary text-xs font-bold py-2 px-3.5 flex items-center justify-center gap-1.5 shadow-md shadow-indigo-950"
+                >
+                  <FolderOpen className="w-3.5 h-3.5" /> View Saved Plan
+                </button>
+                <button
+                  onClick={handleDeleteSavedPlan}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold border border-slate-700 bg-slate-800/80 hover:bg-rose-950/50 text-slate-400 hover:text-rose-400 hover:border-rose-800/60 transition-colors flex items-center gap-1.5"
+                  title="Delete this saved FY plan"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Plan
+                </button>
+              </div>
             </div>
           )}
 
@@ -1237,27 +1328,41 @@ export default function PlannerTab() {
             </div>
           </div>
 
-          <button
-            onClick={handleSavePlan}
-            disabled={savingPlan}
-            className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shrink-0 transition-all ${
-              isCurrentPlanSaved
-                ? 'bg-emerald-600/20 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-600/30'
-                : 'btn-primary shadow-lg shadow-indigo-900/50'
-            }`}
-          >
-            {isCurrentPlanSaved ? (
-              <>
-                <BookmarkCheck className="w-4 h-4 text-emerald-400" />
-                {savingPlan ? 'Updating…' : 'Re-Save / Overwrite Plan'}
-              </>
-            ) : (
-              <>
-                <Bookmark className="w-4 h-4" />
-                {savingPlan ? 'Saving…' : '💾 Save Investment Plan'}
-              </>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleSavePlan}
+              disabled={savingPlan}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shrink-0 transition-all ${
+                isCurrentPlanSaved
+                  ? 'bg-emerald-600/20 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-600/30'
+                  : 'btn-primary shadow-lg shadow-indigo-900/50'
+              }`}
+            >
+              {isCurrentPlanSaved ? (
+                <>
+                  <BookmarkCheck className="w-4 h-4 text-emerald-400" />
+                  {savingPlan ? 'Updating…' : 'Re-Save / Overwrite FY Plan'}
+                </>
+              ) : (
+                <>
+                  <Bookmark className="w-4 h-4" />
+                  {savingPlan ? 'Saving…' : '💾 Save FY Investment Plan'}
+                </>
+              )}
+            </button>
+
+            {isCurrentPlanSaved && (
+              <button
+                type="button"
+                onClick={handleDeleteSavedPlan}
+                className="p-2.5 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-700 hover:border-rose-800/60 transition-colors shrink-0 flex items-center gap-1.5 text-xs font-semibold"
+                title="Delete this saved FY plan"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete</span>
+              </button>
             )}
-          </button>
+          </div>
         </div>
       )}
 
@@ -1844,11 +1949,16 @@ export default function PlannerTab() {
                         {/* Delete Button */}
                         <button
                           type="button"
-                          onClick={() => handleDeleteGoal(g.id, g.goal_name)}
-                          className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/50 text-slate-400 hover:text-rose-400 border border-slate-700/80 hover:border-rose-800/60 transition-colors"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete the saved goal "${g.goal_name}"?`)) {
+                              handleDeleteGoal(g.id, g.goal_name)
+                            }
+                          }}
+                          className="px-2.5 py-1.5 rounded-lg bg-slate-800/80 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-700/80 hover:border-rose-800/60 transition-colors flex items-center gap-1.5 text-xs font-semibold shrink-0"
                           title="Delete this saved goal"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete Goal</span>
                         </button>
                       </div>
 
