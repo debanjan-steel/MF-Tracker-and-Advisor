@@ -76,7 +76,7 @@
   }
 
   .tab-btn {
-    @apply flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-xs font-medium
+    @apply relative flex flex-col items-center justify-center gap-0.5 flex-1 py-2 text-xs font-medium
            transition-colors duration-150;
   }
 

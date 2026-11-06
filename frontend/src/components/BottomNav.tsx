@@ -21,12 +21,12 @@ export default function BottomNav() {
         <button
           key={key}
           onClick={() => setTab(key)}
-          className={`tab-btn ${activeTab === key ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`relative tab-btn ${activeTab === key ? 'text-indigo-400 font-semibold' : 'text-slate-500 hover:text-slate-300'}`}
         >
           <Icon className="w-5 h-5" />
           <span className="text-[10px]">{label}</span>
           {activeTab === key && (
-            <span className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-indigo-500 rounded-full" />
+            <span className="absolute -top-px left-1/2 -translate-x-1/2 w-8 h-0.5 bg-indigo-500 rounded-full shadow-sm shadow-indigo-500/50" />
           )}
         </button>
       ))}
