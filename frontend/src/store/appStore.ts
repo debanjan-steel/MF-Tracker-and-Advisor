@@ -32,6 +32,8 @@ interface AppState {
   // ── Navigation ─────────────────────────────────────────────────
   activeTab: Tab
   setTab: (t: Tab) => void
+  explorerSection: 'search' | 'watchlist' | 'thermo' | 'backtest'
+  setExplorerSection: (s: 'search' | 'watchlist' | 'thermo' | 'backtest') => void
 
   // ── Theme ──────────────────────────────────────────────────────
   darkMode: boolean
@@ -82,6 +84,8 @@ export const useAppStore = create<AppState>((set) => ({
   // ── Navigation ─────────────────────────────────────────────────
   activeTab: 'planner',
   setTab: (t) => set({ activeTab: t }),
+  explorerSection: 'search',
+  setExplorerSection: (s) => set({ explorerSection: s }),
 
   // ── Theme ──────────────────────────────────────────────────────
   darkMode: true,

@@ -15,7 +15,17 @@ import {
 } from 'recharts'
 
 export default function ExplorerTab() {
-  const { watchlist, addToWatchlist, removeFromWatchlist } = useAppStore()
+  const {
+    watchlist,
+    addToWatchlist,
+    removeFromWatchlist,
+    explorerSection,
+    setExplorerSection,
+  } = useAppStore()
+
+  const activeSection = explorerSection
+  const setActiveSection = setExplorerSection
+
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SchemeInfo[]>([])
   const [selected, setSelected] = useState<SchemeInfo | null>(null)
@@ -25,7 +35,12 @@ export default function ExplorerTab() {
   const [backtestData, setBacktestData] = useState<any>(null)
   const [searching, setSearching] = useState(false)
   const [loadingFund, setLoadingFund] = useState(false)
-  const [activeSection, setActiveSection] = useState<'search' | 'watchlist' | 'thermo' | 'backtest'>('search')
+
+  // ── Watchlist tab direct search state ──────────────────────────────
+  const [wlQuery, setWlQuery] = useState('')
+  const [wlSuggestions, setWlSuggestions] = useState<SchemeInfo[]>([])
+  const [wlSearching, setWlSearching] = useState(false)
+  const wlTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const isWatched = (code: number) => watchlist.some((w) => w.scheme_code === code)
 
@@ -42,6 +57,24 @@ export default function ExplorerTab() {
         scheme_category: scheme.scheme_category || '',
         added_at: new Date().toISOString(),
       })
+    }
+  }
+
+  const handleWlQueryChange = (val: string) => {
+    setWlQuery(val)
+    if (wlTimer.current) clearTimeout(wlTimer.current)
+    if (val.length >= 2) {
+      wlTimer.current = setTimeout(async () => {
+        setWlSearching(true)
+        try {
+          const { data } = await fundsAPI.search(val)
+          setWlSuggestions(data?.results || data || [])
+        } finally {
+          setWlSearching(false)
+        }
+      }, 300)
+    } else {
+      setWlSuggestions([])
     }
   }
 
@@ -189,9 +222,14 @@ export default function ExplorerTab() {
                         toggleWatchlist(r)
                       }}
                       title={watched ? 'Remove from Watchlist' : 'Add to Watchlist'}
-                      className="p-2 rounded-lg hover:bg-slate-600/50 text-slate-400 hover:text-amber-400 transition-colors shrink-0"
+                      className={`text-xs font-semibold px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 shrink-0 transition-all ${
+                        watched
+                          ? 'bg-amber-500/20 border-amber-500/60 text-amber-300'
+                          : 'bg-indigo-600/30 border-indigo-500/50 text-indigo-200 hover:bg-indigo-600 hover:text-white'
+                      }`}
                     >
-                      <Star className={`w-4 h-4 ${watched ? 'text-amber-400 fill-amber-400' : 'text-slate-500 hover:text-slate-300'}`} />
+                      <Star className={`w-3.5 h-3.5 ${watched ? 'fill-amber-400 text-amber-400' : ''}`} />
+                      {watched ? 'Saved' : '+ Watch'}
                     </button>
                   </div>
                 )
@@ -199,8 +237,8 @@ export default function ExplorerTab() {
             </div>
           )}
 
-          {/* Loading Fund Details */}
-          {loadingFund && (
+          {/* Loading Fund Details indicator when no selected card yet */}
+          {loadingFund && !selected && (
             <div className="card text-center py-8">
               <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
               <p className="text-sm text-slate-300 font-medium">Fetching Fund NAV History & Analytics…</p>
@@ -208,51 +246,61 @@ export default function ExplorerTab() {
             </div>
           )}
 
-          {/* Scorecard */}
-          {scorecard && (
+          {/* Fund Details & Scorecard */}
+          {selected && (
             <div className="card">
               <div className="flex items-start justify-between gap-3 mb-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-base font-bold text-slate-100 leading-tight">
-                    {selected?.scheme_name || scorecard.scheme_name || 'Fund Performance'}
+                    {selected.scheme_name || scorecard?.scheme_name || 'Fund Performance'}
                   </p>
-                  {(selected?.fund_house || selected?.scheme_category) && (
+                  {(selected.fund_house || selected.scheme_category) && (
                     <p className="text-xs text-slate-400 mt-1">
-                      {[selected?.fund_house, selected?.scheme_category].filter(Boolean).join(' · ')}
+                      {[selected.fund_house, selected.scheme_category].filter(Boolean).join(' · ')}
                     </p>
                   )}
                 </div>
-                {selected && (
-                  <button
-                    onClick={() => toggleWatchlist(selected)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 border transition-all ${
-                      isWatched(selected.scheme_code)
-                        ? 'bg-amber-500/15 border-amber-500/40 text-amber-400 hover:bg-amber-500/25'
-                        : 'bg-slate-800 border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'
-                    }`}
-                  >
-                    <Star className={`w-3.5 h-3.5 ${isWatched(selected.scheme_code) ? 'fill-amber-400 text-amber-400' : 'text-slate-400'}`} />
-                    {isWatched(selected.scheme_code) ? 'In Watchlist' : 'Add to Watchlist'}
-                  </button>
-                )}
+                <button
+                  onClick={() => toggleWatchlist(selected)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 border transition-all ${
+                    isWatched(selected.scheme_code)
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 hover:bg-amber-500/30'
+                      : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500 shadow-md shadow-indigo-600/30'
+                  }`}
+                >
+                  <Star className={`w-3.5 h-3.5 ${isWatched(selected.scheme_code) ? 'fill-amber-400 text-amber-400' : 'text-white'}`} />
+                  {isWatched(selected.scheme_code) ? 'In Watchlist' : '+ Add to Watchlist'}
+                </button>
               </div>
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                <MetricBox label="CAGR 1Y" value={fmtPct(scorecard.cagr_1y)} color={scorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
-                <MetricBox label="CAGR 3Y" value={fmtPct(scorecard.cagr_3y)} color={scorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
-                <MetricBox label="CAGR 5Y" value={fmtPct(scorecard.cagr_5y)} color={scorecard.cagr_5y > 0 ? 'text-green-400' : 'text-red-400'} />
-                <MetricBox label="Sharpe" value={fmt(scorecard.sharpe)} />
-                <MetricBox label="Max DD" value={fmtPct(scorecard.max_drawdown)} color="text-red-400" />
-                <MetricBox label="Alpha" value={fmtPct(scorecard.alpha)} color={scorecard.alpha > 0 ? 'text-green-400' : 'text-red-400'} />
-                <MetricBox label="Beta" value={fmt(scorecard.beta)} />
-                <MetricBox label="Up Cap" value={fmtPct(scorecard.up_capture)} color="text-green-400" />
-                <MetricBox label="Dn Cap" value={fmtPct(scorecard.down_capture)} color="text-red-400" />
-              </div>
-              <div className="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-3">
-                <span className="text-slate-400 text-sm">Overall Grade</span>
-                <span className={`text-2xl font-black ${(scorecard.overall_score ?? 60) > 65 ? 'text-green-400' : (scorecard.overall_score ?? 60) > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                  {scorecard.grade || 'A'}
-                </span>
-              </div>
+
+              {loadingFund && (
+                <div className="text-center py-6 border-t border-slate-800 mt-2">
+                  <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-xs text-slate-400">Loading Scorecard &amp; 200-Day EMA…</p>
+                </div>
+              )}
+
+              {scorecard && !loadingFund && (
+                <>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <MetricBox label="CAGR 1Y" value={fmtPct(scorecard.cagr_1y)} color={scorecard.cagr_1y > 0 ? 'text-green-400' : 'text-red-400'} />
+                    <MetricBox label="CAGR 3Y" value={fmtPct(scorecard.cagr_3y)} color={scorecard.cagr_3y > 0 ? 'text-green-400' : 'text-red-400'} />
+                    <MetricBox label="CAGR 5Y" value={fmtPct(scorecard.cagr_5y)} color={scorecard.cagr_5y > 0 ? 'text-green-400' : 'text-red-400'} />
+                    <MetricBox label="Sharpe" value={fmt(scorecard.sharpe)} />
+                    <MetricBox label="Max DD" value={fmtPct(scorecard.max_drawdown)} color="text-red-400" />
+                    <MetricBox label="Alpha" value={fmtPct(scorecard.alpha)} color={scorecard.alpha > 0 ? 'text-green-400' : 'text-red-400'} />
+                    <MetricBox label="Beta" value={fmt(scorecard.beta)} />
+                    <MetricBox label="Up Cap" value={fmtPct(scorecard.up_capture)} color="text-green-400" />
+                    <MetricBox label="Dn Cap" value={fmtPct(scorecard.down_capture)} color="text-red-400" />
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-900 rounded-xl px-4 py-3">
+                    <span className="text-slate-400 text-sm">Overall Grade</span>
+                    <span className={`text-2xl font-black ${(scorecard.overall_score ?? 60) > 65 ? 'text-green-400' : (scorecard.overall_score ?? 60) > 40 ? 'text-yellow-400' : 'text-red-400'}`}>
+                      {scorecard.grade || 'A'}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -294,19 +342,61 @@ export default function ExplorerTab() {
             </div>
           </div>
 
+          {/* Direct Search & Add to Watchlist */}
+          <div className="relative">
+            <input
+              className="input pl-10"
+              placeholder="Search fund to add to watchlist…"
+              value={wlQuery}
+              onChange={(e) => handleWlQueryChange(e.target.value)}
+            />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            {wlSearching && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500 animate-pulse">searching…</span>
+            )}
+
+            {/* Quick Suggestions Dropdown */}
+            {wlSuggestions.length > 0 && (
+              <div className="absolute z-30 left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden max-h-56 overflow-y-auto shadow-2xl">
+                {wlSuggestions.slice(0, 10).map((r: any) => {
+                  const code = r.scheme_code || r.schemeCode
+                  const name = r.scheme_name || r.schemeName || `Scheme ${code}`
+                  const watched = isWatched(code)
+                  return (
+                    <div
+                      key={code}
+                      className="flex items-center justify-between px-3 py-2.5 hover:bg-slate-700/80 border-b border-slate-700/50 last:border-0"
+                    >
+                      <p className="text-xs font-medium text-slate-200 truncate flex-1 pr-2">{name}</p>
+                      <button
+                        onClick={() => {
+                          toggleWatchlist(r)
+                          setWlSuggestions([])
+                          setWlQuery('')
+                        }}
+                        className={`text-xs px-2.5 py-1 rounded-lg border font-semibold flex items-center gap-1 shrink-0 ${
+                          watched
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300'
+                            : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500'
+                        }`}
+                      >
+                        <Star className={`w-3 h-3 ${watched ? 'fill-amber-400 text-amber-400' : ''}`} />
+                        {watched ? 'Saved' : '+ Add'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
           {watchlist.length === 0 ? (
-            <div className="card text-center py-12">
-              <Star className="w-12 h-12 text-slate-600 mx-auto mb-3 opacity-40" />
-              <p className="text-base font-semibold text-slate-200">Your Watchlist is Empty</p>
-              <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
-                Search for any mutual fund in the <strong>Fund Search</strong> tab and tap <strong>&quot;Add to Watchlist&quot;</strong> to track it here.
+            <div className="card text-center py-10">
+              <Star className="w-10 h-10 text-slate-600 mx-auto mb-2 opacity-40" />
+              <p className="text-sm font-semibold text-slate-200">Your Watchlist is Empty</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
+                Type any mutual fund name in the search box above to add it to your watchlist.
               </p>
-              <button
-                onClick={() => setActiveSection('search')}
-                className="btn-primary mt-4 text-xs py-2 px-4 inline-flex items-center gap-1.5"
-              >
-                <Search className="w-3.5 h-3.5" /> Go to Fund Search
-              </button>
             </div>
           ) : (
             <div className="space-y-2">
