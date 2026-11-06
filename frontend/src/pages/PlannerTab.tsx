@@ -64,10 +64,183 @@ function generateTacticalPlanLocal(
   capitalInput: number,
   posture = 'GROWTH',
   timingScore = 62,
-  dangerScore = 28
+  dangerScore = 28,
+  strategyMode: 'tactical' | 'strict_equity' = 'tactical'
 ): TacticalPlan {
   const capital = Math.max(1000, capitalInput || 100000)
 
+  // ── Mode 1: Strict Pure Equity (Large / Mid / Small only — No Liquid, No Flexi) ──
+  if (strategyMode === 'strict_equity') {
+    let largePct = 50
+    let midPct = 30
+    let smallPct = 20
+
+    if (posture === 'AGGRESSIVE') {
+      largePct = 40
+      midPct = 35
+      smallPct = 25
+    } else if (posture === 'BALANCED') {
+      largePct = 60
+      midPct = 25
+      smallPct = 15
+    } else if (posture === 'DEFENSIVE' || posture === 'CAPITAL_SAFE') {
+      largePct = 70
+      midPct = 20
+      smallPct = 10
+    }
+
+    const largeAmt = Math.round(capital * (largePct / 100))
+    const midAmt = Math.round(capital * (midPct / 100))
+    const smallAmt = Math.round(capital * (smallPct / 100))
+
+    return {
+      capital,
+      posture,
+      timing_score: timingScore,
+      danger_score: dangerScore,
+      forecast_summary: `100% Pure Equity Plan (Large, Mid & Small Cap only). Market posture is ${posture} (Score: ${timingScore}/100). Deploy Large Cap anchor now, stagger Mid Cap, and reserve Small Cap capital for the predicted Jan pullback.`,
+      category_allocations: [
+        {
+          category: 'Large Cap',
+          allocation_pct: largePct,
+          allocation_amount: largeAmt,
+          temperature_score: 42,
+          temperature_label: 'WARM',
+          temperature_emoji: '😐',
+          valuation_status: 'Fairly Valued (Historical P/E 48th percentile)',
+          rationale: 'Core bluechip stability. Maximum institutional liquidity and downside defense.',
+          color: 'text-indigo-400 bg-indigo-900/20 border-indigo-700',
+        },
+        {
+          category: 'Mid Cap',
+          allocation_pct: midPct,
+          allocation_amount: midAmt,
+          temperature_score: 64,
+          temperature_label: 'HOT',
+          temperature_emoji: '🔥',
+          valuation_status: 'Moderately Stretched (Historical P/E 68th percentile)',
+          rationale: 'High earnings momentum. Requires 2-stage phased entry across quarter.',
+          color: 'text-emerald-400 bg-emerald-900/20 border-emerald-700',
+        },
+        {
+          category: 'Small Cap',
+          allocation_pct: smallPct,
+          allocation_amount: smallAmt,
+          temperature_score: 78,
+          temperature_label: 'OVERHEATED',
+          temperature_emoji: '🌋',
+          valuation_status: 'Overheated (Historical P/E 82nd percentile)',
+          rationale: 'High correction vulnerability. Model predicts a 4–6% mean-reversion dip in 60 days.',
+          color: 'text-orange-400 bg-orange-900/20 border-orange-700',
+        },
+      ],
+      fund_recommendations: [
+        {
+          category: 'Large Cap',
+          fund_name: 'Nippon India Large Cap Fund - Direct Plan',
+          scheme_code: 119598,
+          cagr_3y: 20.8,
+          cagr_5y: 21.4,
+          sharpe: 1.28,
+          max_drawdown: -15.8,
+          allocation_pct: largePct,
+          allocation_amount: largeAmt,
+          action_timing: 'Deploy 50% Now (Month 1), 50% in Month 3',
+          timing_rationale: 'Superior pure large-cap alpha and bluechip governance. Direct equity compounder.',
+          is_dip_trigger: false,
+        },
+        {
+          category: 'Mid Cap',
+          fund_name: 'Motilal Oswal Midcap Fund - Direct Plan',
+          scheme_code: 153694,
+          cagr_3y: 26.8,
+          cagr_5y: 27.5,
+          sharpe: 1.35,
+          max_drawdown: -18.5,
+          allocation_pct: midPct,
+          allocation_amount: midAmt,
+          action_timing: 'Deploy in 2 Tranches: 50% in Month 1, 50% in Month 4',
+          timing_rationale: 'High earnings quality. Phased tranches prevent top-of-cycle risk.',
+          is_dip_trigger: false,
+        },
+        {
+          category: 'Small Cap',
+          fund_name: 'Nippon India Small Cap Fund - Direct Plan',
+          scheme_code: 118778,
+          cagr_3y: 28.2,
+          cagr_5y: 31.6,
+          sharpe: 1.48,
+          max_drawdown: -22.1,
+          allocation_pct: smallPct,
+          allocation_amount: smallAmt,
+          action_timing: '⚠️ DO NOT BUY ALL TODAY — Trigger in Month 3 upon Dip',
+          timing_rationale: `Category is running hot (78/100). Model forecasts a 4–6% pullback window. Keep ₹${fmtINR(smallAmt)} in bank ready to deploy on dip alert in Month 3!`,
+          is_dip_trigger: true,
+          predicted_dip_pct: 5.2,
+          predicted_dip_window: 'December 2026 – January 2027',
+        },
+      ],
+      macro_catalysts: [
+        {
+          event: 'Brent Crude Volatility & Currency Pressure',
+          date: 'Ongoing (Nov–Dec 2026)',
+          impact: 'Crude above $82 exerts pressure on Indian high-beta small caps. Historically triggers 4–7% pullbacks.',
+          action: 'Stagger small-cap tranches rather than deploying lump sum.',
+        },
+        {
+          event: 'RBI Monetary Policy Committee (MPC)',
+          date: '2026-12-04',
+          impact: 'Rate stance guidance. Policy stability favors large-cap earnings visibility.',
+          action: 'Large cap core holdings benefit from policy clarity.',
+        },
+        {
+          event: 'Union Budget 2027 Pre-Announcement Volatility',
+          date: '2027-02-01',
+          impact: 'Historically drives institutional sector rotation and a ±5% small/mid-cap consolidation.',
+          action: 'Execute the Nippon India Small Cap dip entry prior to budget run-up.',
+        },
+      ],
+      execution_roadmap: [
+        {
+          month: 'Nov 2026 (Month 1 — Immediate)',
+          action: `Deploy Tranche 1: ₹${fmtINR(largeAmt / 2)} in Nippon India Large Cap + ₹${fmtINR(midAmt / 2)} in Motilal Oswal Midcap. Keep remaining balance in bank.`,
+          deployed_equity: Math.round(largeAmt / 2 + midAmt / 2),
+          parked_liquid: 0,
+          status: 'IMMEDIATE_ACTION',
+        },
+        {
+          month: 'Dec 2026 (Month 2 — Event Watch)',
+          action: 'RBI MPC rate decision. Hold remaining capital in bank. Monitor Small-Cap valuation cooldown.',
+          deployed_equity: 0,
+          parked_liquid: 0,
+          status: 'HOLD_AND_EARN',
+        },
+        {
+          month: 'Jan 2027 (Month 3 — ⚡ Dip Trigger Window)',
+          action: `Tactical Trigger: Nippon India Small Cap expected dip (-4% to -6%). Deploy full ₹${fmtINR(smallAmt)} directly into Nippon India Small Cap. Deploy Tranche 2 of Large Cap (₹${fmtINR(largeAmt / 2)}).`,
+          deployed_equity: Math.round(smallAmt + largeAmt / 2),
+          parked_liquid: 0,
+          status: 'TACTICAL_BUY_DIP',
+        },
+        {
+          month: 'Feb 2027 (Month 4 — Budget Rebalance)',
+          action: `Post-Union Budget clarity: Deploy remaining ₹${fmtINR(midAmt / 2)} into Motilal Oswal Midcap.`,
+          deployed_equity: Math.round(midAmt / 2),
+          parked_liquid: 0,
+          status: 'FINAL_TRANCHE',
+        },
+        {
+          month: 'Mar 2027 (Month 5 — FY Settlement)',
+          action: `100% of your ₹${fmtINR(capital)} is fully deployed into pure equities (Large, Mid & Small Cap) before March 31!`,
+          deployed_equity: capital,
+          parked_liquid: 0,
+          status: 'FY_COMPLETE',
+        },
+      ],
+    }
+  }
+
+  // ── Mode 2: Tactical Dynamic (Includes Liquid & Flexi Cap) ──
   // Cap split based on posture
   let largePct = 40
   let midPct = 25
@@ -289,6 +462,9 @@ export default function PlannerTab() {
   const currentAge = useAppStore((s) => s.plannerCurrentAge)
   const setCurrentAge = useAppStore((s) => s.setPlannerCurrentAge)
 
+  const strategyMode = useAppStore((s) => s.plannerStrategyMode)
+  const setStrategyMode = useAppStore((s) => s.setPlannerStrategyMode)
+
   const tacticalPlan = useAppStore((s) => s.plannerTacticalPlan)
   const setTacticalPlan = useAppStore((s) => s.setPlannerTacticalPlan)
   const timing = useAppStore((s) => s.plannerTiming)
@@ -313,7 +489,8 @@ export default function PlannerTab() {
   const effectiveGoalTarget = goalMode === 'retirement' ? String(retirementCorpus) : goalTarget
   const effectiveGoalYears = goalMode === 'retirement' ? String(retirementYears) : goalYears
 
-  const loadPlan = async () => {
+  const loadPlan = async (customMode?: 'tactical' | 'strict_equity') => {
+    const activeMode = customMode ?? strategyMode
     const capNum = Number(capital)
     if (!capital || capNum <= 0) {
       setError('Please enter an investment amount greater than ₹0.')
@@ -322,14 +499,14 @@ export default function PlannerTab() {
     setError(null)
 
     // Immediately calculate and show updated plan on screen (0ms latency)
-    setTacticalPlan(generateTacticalPlanLocal(capNum, tacticalPlan?.posture ?? 'GROWTH', timing?.score ?? 62, tacticalPlan?.danger_score ?? 28))
+    setTacticalPlan(generateTacticalPlanLocal(capNum, tacticalPlan?.posture ?? 'GROWTH', timing?.score ?? 62, tacticalPlan?.danger_score ?? 28, activeMode))
 
     setLoading(true)
     const mBudgetNum = hasMonthlyBudget ? Number(monthlyLimit) : Math.round(capNum / fy.monthsRemainingInFY)
 
     try {
       const calls: Promise<any>[] = [
-        plannerAPI.tacticalPlan(capNum, hasMonthlyBudget ? Number(monthlyLimit) : undefined),
+        plannerAPI.tacticalPlan(capNum, hasMonthlyBudget ? Number(monthlyLimit) : undefined, activeMode),
         analyticsAPI.timingScore(122640),
       ]
 
@@ -420,6 +597,61 @@ export default function PlannerTab() {
                 {fmtINR(Number(amt))}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Strategy Mode Selector: Tactical Dynamic vs Strict Pure Equity */}
+        <div className="pt-3 border-t border-slate-800/80 mb-3">
+          <label className="label flex items-center justify-between text-xs mb-1.5">
+            <span className="font-semibold text-slate-200">Portfolio Strategy Model</span>
+            <span className="text-[11px] text-slate-400">
+              {strategyMode === 'tactical' ? 'Includes Dry Powder Liquid & Flexi Cap' : '100% Pure Equity (Large / Mid / Small Only)'}
+            </span>
+          </label>
+          <div className="grid grid-cols-2 gap-2 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => {
+                setStrategyMode('tactical')
+                if (tacticalPlan && capital && Number(capital) > 0) {
+                  loadPlan('tactical')
+                }
+              }}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                strategyMode === 'tactical'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40 border border-indigo-400/30'
+                  : 'text-slate-400 hover:text-slate-200 border border-transparent'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-yellow-300" /> Tactical Dynamic
+              </span>
+              <span className={`text-[10px] font-normal ${strategyMode === 'tactical' ? 'text-indigo-200' : 'text-slate-500'}`}>
+                Flexi + Mid + Small + Liquid
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setStrategyMode('strict_equity')
+                if (tacticalPlan && capital && Number(capital) > 0) {
+                  loadPlan('strict_equity')
+                }
+              }}
+              className={`py-2 px-3 rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-0.5 ${
+                strategyMode === 'strict_equity'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40 border border-indigo-400/30'
+                  : 'text-slate-400 hover:text-slate-200 border border-transparent'
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5 text-emerald-300" /> Strict Pure Equity
+              </span>
+              <span className={`text-[10px] font-normal ${strategyMode === 'strict_equity' ? 'text-indigo-200' : 'text-slate-500'}`}>
+                Large + Mid + Small (No Debt)
+              </span>
+            </button>
           </div>
         </div>
 
@@ -568,7 +800,7 @@ export default function PlannerTab() {
           </div>
         )}
 
-        <button onClick={loadPlan} className="btn-primary w-full py-3 text-sm font-bold" disabled={loading}>
+        <button onClick={() => loadPlan()} className="btn-primary w-full py-3 text-sm font-bold" disabled={loading}>
           {loading ? 'Analyzing Market Timing & Fund Data…' : '⚡ Generate Tactical Investment Plan'}
         </button>
         {error && <p className="text-red-400 text-xs mt-2">{error}</p>}

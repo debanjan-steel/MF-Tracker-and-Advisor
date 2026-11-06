@@ -51,8 +51,8 @@ export const analyticsAPI = {
 // ── Planner ──────────────────────────────────────────────────────────
 export const plannerAPI = {
   sipDates: () => api.get('/planner/sip-dates'),
-  tacticalPlan: (capital: number, monthlyLimit?: number) =>
-    api.post('/planner/tactical-plan', { capital, monthly_limit: monthlyLimit }),
+  tacticalPlan: (capital: number, monthlyLimit?: number, strategyMode = 'tactical') =>
+    api.post('/planner/tactical-plan', { capital, monthly_limit: monthlyLimit, strategy_mode: strategyMode }),
   allocationAdvice: (capital: number, timingScore = 60, dangerScore = 20) =>
     api.post('/planner/allocation-advice', {
       timing_score: timingScore,

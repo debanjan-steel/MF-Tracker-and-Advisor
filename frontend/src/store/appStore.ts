@@ -35,6 +35,10 @@ interface AppState {
   plannerCurrentAge: string
   setPlannerCurrentAge: (v: string) => void
 
+  // Strategy Mode: 'tactical' (Dynamic with Liquid + Flexi) vs 'strict_equity' (Pure Large/Mid/Small only)
+  plannerStrategyMode: 'tactical' | 'strict_equity'
+  setPlannerStrategyMode: (v: 'tactical' | 'strict_equity') => void
+
   // Generated results
   plannerTacticalPlan: TacticalPlan | null
   setPlannerTacticalPlan: (v: TacticalPlan | null) => void
@@ -72,6 +76,9 @@ export const useAppStore = create<AppState>((set) => ({
   setPlannerGoalYears: (v) => set({ plannerGoalYears: v }),
   plannerCurrentAge: '30',
   setPlannerCurrentAge: (v) => set({ plannerCurrentAge: v }),
+
+  plannerStrategyMode: 'tactical',
+  setPlannerStrategyMode: (v) => set({ plannerStrategyMode: v }),
 
   plannerTacticalPlan: null,
   setPlannerTacticalPlan: (v) => set({ plannerTacticalPlan: v }),
