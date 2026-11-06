@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from src.auth.supabase_client import get_current_user
 from src.notifications.whatsapp_bot import (
     send_whatsapp_message,
+    send_telegram_message,
     format_opportunity_alert,
     format_macro_shock_alert,
     format_smart_sip_alert,
@@ -25,6 +26,9 @@ router = APIRouter()
 
 class AlertSettings(BaseModel):
     phone_number: str
+    callmebot_apikey: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
+    telegram_bot_token: Optional[str] = None
     enable_entry_alerts: bool = True
     enable_macro_shocks: bool = True
     enable_monthly_sip: bool = True
@@ -33,26 +37,33 @@ class AlertSettings(BaseModel):
 
 class TestAlertRequest(BaseModel):
     phone_number: Optional[str] = None
+    callmebot_apikey: Optional[str] = None
+    channel: str = "whatsapp"  # "whatsapp" | "telegram"
+    telegram_chat_id: Optional[str] = None
     alert_type: str = "entry"  # "entry" | "macro" | "sip" | "dud"
 
 
-@router.get("/settings", summary="Get WhatsApp alert settings")
+@router.get("/settings", summary="Get alert settings")
 def get_alert_settings(user: dict = Depends(get_current_user)):
     """Retrieve the current user's alert notification preferences."""
     return {
         "user_id": user["user_id"],
         "phone_number": os.getenv("DEFAULT_WHATSAPP_TO", ""),
+        "callmebot_apikey": os.getenv("CALLMEBOT_API_KEY", ""),
+        "telegram_chat_id": os.getenv("TELEGRAM_CHAT_ID", ""),
         "enable_entry_alerts": True,
         "enable_macro_shocks": True,
         "enable_monthly_sip": True,
         "enable_dud_alerts": True,
         "is_twilio_configured": bool(os.getenv("TWILIO_ACCOUNT_SID") and os.getenv("TWILIO_AUTH_TOKEN")),
+        "is_callmebot_configured": bool(os.getenv("CALLMEBOT_API_KEY")),
+        "is_telegram_configured": bool(os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_CHAT_ID")),
     }
 
 
-@router.post("/settings", summary="Update WhatsApp alert settings")
+@router.post("/settings", summary="Update alert settings")
 def update_alert_settings(settings: AlertSettings, user: dict = Depends(get_current_user)):
-    """Update notification preferences and destination WhatsApp number."""
+    """Update notification preferences and destination numbers/keys."""
     return {
         "message": "Alert preferences saved successfully.",
         "user_id": user["user_id"],
@@ -60,9 +71,9 @@ def update_alert_settings(settings: AlertSettings, user: dict = Depends(get_curr
     }
 
 
-@router.post("/test", summary="Send a test WhatsApp notification")
+@router.post("/test", summary="Send a test notification")
 def send_test_alert(req: TestAlertRequest, user: dict = Depends(get_current_user)):
-    """Trigger a sample WhatsApp alert to verify setup."""
+    """Trigger a sample alert to verify setup via WhatsApp or Telegram."""
     target_phone = req.phone_number or os.getenv("DEFAULT_WHATSAPP_TO", "+919876543210")
     if req.alert_type == "entry":
         msg = format_opportunity_alert(
@@ -97,7 +108,12 @@ def send_test_alert(req: TestAlertRequest, user: dict = Depends(get_current_user
     else:
         msg = f"🔔 Test alert from Indian MF Analytics Platform for {user.get('email', 'User')}."
 
-    result = send_whatsapp_message(target_phone, msg)
+    if req.channel == "telegram":
+        chat_id = req.telegram_chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
+        result = send_telegram_message(chat_id, msg)
+    else:
+        result = send_whatsapp_message(target_phone, msg, callmebot_apikey=req.callmebot_apikey)
+
     return {
         "success": result.get("status") in ["sent", "mocked"],
         "details": result,

@@ -115,7 +115,19 @@ export const portfolioAPI = {
 export const alertsAPI = {
   getSettings: () => api.get('/alerts/settings'),
   saveSettings: (data: object) => api.post('/alerts/settings', data),
-  sendTest: (phoneNumber?: string, alertType?: string) =>
-    api.post('/alerts/test', { phone_number: phoneNumber, alert_type: alertType || 'entry' }),
+  sendTest: (payload?: {
+    phoneNumber?: string
+    alertType?: string
+    channel?: 'whatsapp' | 'telegram'
+    callmebotApikey?: string
+    telegramChatId?: string
+  }) =>
+    api.post('/alerts/test', {
+      phone_number: payload?.phoneNumber,
+      alert_type: payload?.alertType || 'entry',
+      channel: payload?.channel || 'whatsapp',
+      callmebot_apikey: payload?.callmebotApikey,
+      telegram_chat_id: payload?.telegramChatId,
+    }),
   history: () => api.get('/alerts/history'),
 }

@@ -148,6 +148,9 @@ export interface SIPRecommendation {
 
 export interface AlertSettings {
   whatsapp_number: string
+  callmebot_apikey?: string
+  telegram_chat_id?: string
+  telegram_bot_token?: string
   entry_alert: boolean
   macro_alert: boolean
   sip_reminder: boolean
