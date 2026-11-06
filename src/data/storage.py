@@ -143,6 +143,15 @@ CREATE TABLE IF NOT EXISTS user_alert_preferences (
     updated_at          TEXT DEFAULT (datetime('now'))
 );
 
+-- User saved investment plans (overwritten when a new plan is saved)
+CREATE TABLE IF NOT EXISTS user_saved_plans (
+    user_id             TEXT PRIMARY KEY,
+    plan_data           TEXT NOT NULL,          -- JSON serialized payload
+    capital             REAL NOT NULL,
+    saved_at            TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT DEFAULT (datetime('now'))
+);
+
 -- Index for fast time-series queries
 CREATE INDEX IF NOT EXISTS idx_nav_scheme_date  ON nav_history(scheme_code, nav_date DESC);
 CREATE INDEX IF NOT EXISTS idx_macro_ticker_date ON macro_history(ticker, price_date DESC);

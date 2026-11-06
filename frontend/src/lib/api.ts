@@ -93,6 +93,10 @@ export const plannerAPI = {
         base_monthly_sip: baseSip,
       },
     }),
+  getSavedPlan: () => api.get('/planner/saved-plan'),
+  savePlan: (capital: number, planData: any) =>
+    api.post('/planner/saved-plan', { capital, plan_data: planData }),
+  deleteSavedPlan: () => api.delete('/planner/saved-plan'),
 }
 
 // ── Portfolio ────────────────────────────────────────────────────────

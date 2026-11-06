@@ -672,3 +672,78 @@ def tax_pack(body: TaxPackRequest, user: dict = Depends(get_current_user)):
         ],
     }
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Saved Investment Plan Persistence (Save, View Anytime, Overwrite)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class SavePlanRequest(BaseModel):
+    capital: float
+    plan_data: dict
+
+
+@router.get("/saved-plan", summary="Get user's saved investment plan")
+def get_saved_plan(user: dict = Depends(get_current_user)):
+    """Retrieve the user's previously saved investment plan if one exists."""
+    from src.data.storage import get_db
+    import json
+    user_id = user["user_id"]
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT plan_data, capital, saved_at, updated_at FROM user_saved_plans WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+
+        if not row:
+            return {"has_saved_plan": False, "plan": None}
+
+        try:
+            parsed_data = json.loads(row["plan_data"])
+        except Exception:
+            parsed_data = {}
+
+        return {
+            "has_saved_plan": True,
+            "capital": row["capital"],
+            "saved_at": row["saved_at"],
+            "updated_at": row["updated_at"],
+            "plan": parsed_data,
+        }
+
+
+@router.post("/saved-plan", summary="Save or overwrite user's investment plan")
+def save_investment_plan(body: SavePlanRequest, user: dict = Depends(get_current_user)):
+    """Save an investment plan, overwriting any previous saved plan for this user."""
+    from src.data.storage import get_db
+    import json
+    user_id = user["user_id"]
+    serialized = json.dumps(body.plan_data)
+    with get_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO user_saved_plans (user_id, plan_data, capital, saved_at, updated_at)
+            VALUES (?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(user_id) DO UPDATE SET
+                plan_data = excluded.plan_data,
+                capital = excluded.capital,
+                updated_at = datetime('now')
+            """,
+            (user_id, serialized, body.capital),
+        )
+
+    return {
+        "success": True,
+        "message": "Investment plan saved successfully. Overwrote any previous plan.",
+    }
+
+
+@router.delete("/saved-plan", summary="Delete user's saved investment plan")
+def delete_saved_plan(user: dict = Depends(get_current_user)):
+    """Delete the saved investment plan."""
+    from src.data.storage import get_db
+    user_id = user["user_id"]
+    with get_db() as conn:
+        conn.execute("DELETE FROM user_saved_plans WHERE user_id = ?", (user_id,))
+    return {"success": True, "message": "Saved plan removed."}
+
+

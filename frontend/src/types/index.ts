@@ -245,3 +245,19 @@ export interface TacticalPlan {
   execution_roadmap: ExecutionRoadmapPhase[]
 }
 
+export interface SavedInvestmentPlanPayload {
+  capital: number
+  hasMonthlyBudget: boolean
+  monthlyLimit: string
+  hasGoal: boolean
+  goalMode: 'target' | 'retirement'
+  goalTarget: string
+  goalYears: string
+  currentAge: string
+  strategyMode: 'tactical' | 'strict_equity'
+  tacticalPlan: TacticalPlan
+  timing?: TimingScore | null
+  goal?: GoalPlan | null
+  savedAt: string
+}
+

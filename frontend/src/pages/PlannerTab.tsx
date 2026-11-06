@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { plannerAPI, analyticsAPI } from '../lib/api'
-import { TacticalPlan, TimingScore, SIPRecommendation, GoalPlan } from '../types'
+import { TacticalPlan, TimingScore, SIPRecommendation, GoalPlan, SavedInvestmentPlanPayload } from '../types'
 import { fmtINR } from '../lib/utils'
 import { useAppStore } from '../store/appStore'
 import {
@@ -14,6 +14,11 @@ import {
   Flame,
   ChevronDown,
   ChevronUp,
+  Bookmark,
+  BookmarkCheck,
+  FolderOpen,
+  CheckCircle,
+  Sparkles,
 } from 'lucide-react'
 
 function getFYSchedule(date = new Date()) {
@@ -479,6 +484,97 @@ export default function PlannerTab() {
   const [showRoadmap, setShowRoadmap] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // ── Saved Investment Plan State & Persistence ──────────────────
+  const savedPlan = useAppStore((s) => s.savedPlan)
+  const setSavedPlan = useAppStore((s) => s.setSavedPlan)
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null)
+  const [savingPlan, setSavingPlan] = useState(false)
+
+  // On initial mount, fetch any saved plan from backend if not already in store
+  useEffect(() => {
+    plannerAPI.getSavedPlan()
+      .then((res) => {
+        if (res.data?.has_saved_plan && res.data?.plan) {
+          if (!savedPlan) {
+            setSavedPlan(res.data.plan)
+          }
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleSavePlan = async () => {
+    if (!tacticalPlan) return
+    setSavingPlan(true)
+    const nowFormatted = new Date().toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+
+    const payload: SavedInvestmentPlanPayload = {
+      capital: tacticalPlan.capital,
+      hasMonthlyBudget,
+      monthlyLimit,
+      hasGoal,
+      goalMode,
+      goalTarget,
+      goalYears,
+      currentAge,
+      strategyMode,
+      tacticalPlan,
+      timing,
+      goal,
+      savedAt: nowFormatted,
+    }
+
+    const wasOverwrite = Boolean(savedPlan)
+    setSavedPlan(payload)
+
+    try {
+      await plannerAPI.savePlan(tacticalPlan.capital, payload)
+    } catch {
+      // localStorage is already persisted via setSavedPlan
+    } finally {
+      setSavingPlan(false)
+    }
+
+    setSaveSuccessMsg(
+      wasOverwrite
+        ? '✓ Previous plan overwritten! New investment plan saved.'
+        : '✓ Investment plan saved! You can reopen it anytime.'
+    )
+    setTimeout(() => setSaveSuccessMsg(null), 4000)
+  }
+
+  const openSavedPlan = () => {
+    if (!savedPlan) return
+    setCapital(String(savedPlan.capital))
+    setHasMonthlyBudget(savedPlan.hasMonthlyBudget)
+    setMonthlyLimit(savedPlan.monthlyLimit)
+    setHasGoal(savedPlan.hasGoal)
+    setGoalMode(savedPlan.goalMode)
+    setGoalTarget(savedPlan.goalTarget)
+    setGoalYears(savedPlan.goalYears)
+    setCurrentAge(savedPlan.currentAge)
+    setStrategyMode(savedPlan.strategyMode)
+    setTacticalPlan(savedPlan.tacticalPlan)
+    if (savedPlan.timing) setTiming(savedPlan.timing)
+    if (savedPlan.goal) setGoal(savedPlan.goal)
+
+    setSaveSuccessMsg(`Loaded saved investment plan (₹${fmtINR(savedPlan.capital)} · Saved on ${savedPlan.savedAt})`)
+    setTimeout(() => setSaveSuccessMsg(null), 3500)
+  }
+
+  const isCurrentPlanSaved = Boolean(
+    savedPlan &&
+    tacticalPlan &&
+    Number(savedPlan.capital) === Number(tacticalPlan.capital) &&
+    savedPlan.strategyMode === strategyMode
+  )
+
   const fy = useMemo(() => getFYSchedule(), [])
 
   // Computed retirement values
@@ -546,6 +642,37 @@ export default function PlannerTab() {
 
   return (
     <div className="space-y-4 pb-12">
+      {/* ── Persistent Saved Plan Quick-Access Banner ── */}
+      {savedPlan && (
+        <div className="bg-gradient-to-r from-indigo-950/80 via-slate-900 to-indigo-950/80 border border-indigo-500/50 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg shadow-indigo-950/30">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 flex items-center justify-center shrink-0">
+              <BookmarkCheck className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-slate-100">
+                  Saved Investment Plan: ₹{fmtINR(savedPlan.capital)}
+                </span>
+                <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-900/60 border border-indigo-700/60 text-indigo-300 font-mono">
+                  {savedPlan.strategyMode === 'strict_equity' ? 'Pure Equity' : 'Tactical Strategy'}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Saved on {savedPlan.savedAt} · Stored permanently across app refreshes
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={openSavedPlan}
+            className="btn-primary text-xs font-bold py-2 px-4 flex items-center justify-center gap-1.5 shrink-0 shadow-md shadow-indigo-950"
+          >
+            <FolderOpen className="w-3.5 h-3.5" /> View Saved Plan
+          </button>
+        </div>
+      )}
+
       {/* ── STEP 1: Total Capital Input Card ───────────────────────────── */}
       <div className="card border-indigo-600/40 shadow-lg shadow-indigo-950/20">
         <div className="flex items-center justify-between mb-3">
@@ -813,11 +940,77 @@ export default function PlannerTab() {
             <TrendingUp className="w-6 h-6 text-indigo-400" />
           </div>
           <h3 className="text-sm font-semibold text-slate-200 mb-1">Ready to Build Your Tactical Plan</h3>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+          <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed mb-3">
             Enter your total investment amount above and click{' '}
             <span className="text-indigo-400 font-semibold">Generate Tactical Investment Plan</span> to receive an
             optimal cap split, high-conviction funds, and dip-timed execution roadmap before the financial year ends.
           </p>
+          {savedPlan && (
+            <button
+              onClick={openSavedPlan}
+              className="btn-secondary text-xs font-semibold px-4 py-2 mt-2 inline-flex items-center gap-1.5 shadow-sm"
+            >
+              <FolderOpen className="w-3.5 h-3.5 text-indigo-400" /> Re-open Saved Plan (₹{fmtINR(savedPlan.capital)})
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ── Save Plan Banner & Action Bar ── */}
+      {tacticalPlan && (
+        <div className="card bg-slate-900 border border-indigo-500/50 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm font-bold text-slate-100 leading-tight">
+                  Tactical Investment Plan (₹{fmtINR(tacticalPlan.capital)})
+                </h3>
+                {isCurrentPlanSaved && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-semibold flex items-center gap-1">
+                    <BookmarkCheck className="w-3 h-3 text-emerald-400" /> Saved on {savedPlan?.savedAt}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                {isCurrentPlanSaved
+                  ? 'This plan is stored permanently and can be reopened anytime you refresh or visit the app.'
+                  : 'Click "Save Investment Plan" to store this plan. Saving a new plan will overwrite the previous one.'}
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={handleSavePlan}
+            disabled={savingPlan}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shrink-0 transition-all ${
+              isCurrentPlanSaved
+                ? 'bg-emerald-600/20 border border-emerald-500/60 text-emerald-300 hover:bg-emerald-600/30'
+                : 'btn-primary shadow-lg shadow-indigo-900/50'
+            }`}
+          >
+            {isCurrentPlanSaved ? (
+              <>
+                <BookmarkCheck className="w-4 h-4 text-emerald-400" />
+                {savingPlan ? 'Updating…' : 'Re-Save / Overwrite Plan'}
+              </>
+            ) : (
+              <>
+                <Bookmark className="w-4 h-4" />
+                {savingPlan ? 'Saving…' : '💾 Save Investment Plan'}
+              </>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* Save feedback toast */}
+      {saveSuccessMsg && (
+        <div className="bg-emerald-950/80 border border-emerald-700/60 rounded-xl p-3 text-xs text-emerald-300 font-semibold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span>{saveSuccessMsg}</span>
         </div>
       )}
 

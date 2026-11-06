@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { TacticalPlan, TimingScore, GoalPlan } from '../types'
+import { TacticalPlan, TimingScore, GoalPlan, SavedInvestmentPlanPayload } from '../types'
 
 type Tab = 'planner' | 'portfolio' | 'explorer' | 'alerts' | 'settings'
 
@@ -23,6 +23,27 @@ const loadSavedWatchlist = (): WatchlistItem[] => {
 const persistWatchlist = (list: WatchlistItem[]) => {
   try {
     localStorage.setItem('mf_watchlist', JSON.stringify(list))
+  } catch {
+    // ignore
+  }
+}
+
+const loadSavedPlanFromStorage = (): SavedInvestmentPlanPayload | null => {
+  try {
+    const raw = localStorage.getItem('mf_saved_investment_plan')
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+const persistSavedPlanToStorage = (plan: SavedInvestmentPlanPayload | null) => {
+  try {
+    if (plan) {
+      localStorage.setItem('mf_saved_investment_plan', JSON.stringify(plan))
+    } else {
+      localStorage.removeItem('mf_saved_investment_plan')
+    }
   } catch {
     // ignore
   }
@@ -74,6 +95,10 @@ interface AppState {
   plannerGoal: GoalPlan | null
   setPlannerGoal: (v: GoalPlan | null) => void
 
+  // ── Saved Investment Plan Persistence ──────────────────────────
+  savedPlan: SavedInvestmentPlanPayload | null
+  setSavedPlan: (plan: SavedInvestmentPlanPayload | null) => void
+
   // ── Watchlist ──────────────────────────────────────────────────
   watchlist: WatchlistItem[]
   addToWatchlist: (item: WatchlistItem) => void
@@ -120,6 +145,13 @@ export const useAppStore = create<AppState>((set) => ({
   setPlannerTiming: (v) => set({ plannerTiming: v }),
   plannerGoal: null,
   setPlannerGoal: (v) => set({ plannerGoal: v }),
+
+  // ── Saved Investment Plan Persistence ──────────────────────────
+  savedPlan: loadSavedPlanFromStorage(),
+  setSavedPlan: (plan) => {
+    persistSavedPlanToStorage(plan)
+    set({ savedPlan: plan })
+  },
 
   // ── Watchlist ──────────────────────────────────────────────────
   watchlist: loadSavedWatchlist(),
