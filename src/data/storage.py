@@ -99,10 +99,29 @@ CREATE TABLE IF NOT EXISTS macro_sync_log (
     last_price_date TEXT NOT NULL
 );
 
+-- User portfolio holdings
+CREATE TABLE IF NOT EXISTS user_holdings (
+    id                  TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    scheme_code         INTEGER NOT NULL,
+    scheme_name         TEXT NOT NULL,
+    units               REAL NOT NULL,
+    avg_nav             REAL NOT NULL,
+    invested_amount     REAL NOT NULL,
+    category            TEXT DEFAULT 'Equity',
+    folio_number        TEXT,
+    investment_type     TEXT DEFAULT 'LUMPSUM',
+    investment_date     TEXT,
+    created_at          TEXT DEFAULT (datetime('now')),
+    updated_at          TEXT DEFAULT (datetime('now')),
+    UNIQUE(user_id, scheme_code)
+);
+
 -- Index for fast time-series queries
 CREATE INDEX IF NOT EXISTS idx_nav_scheme_date  ON nav_history(scheme_code, nav_date DESC);
 CREATE INDEX IF NOT EXISTS idx_macro_ticker_date ON macro_history(ticker, price_date DESC);
 CREATE INDEX IF NOT EXISTS idx_prediction_status ON prediction_ledger(status, target_date);
+CREATE INDEX IF NOT EXISTS idx_user_holdings_user ON user_holdings(user_id);
 """
 
 

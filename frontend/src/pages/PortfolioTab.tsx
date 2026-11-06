@@ -2,23 +2,49 @@ import React, { useEffect, useState, useRef, useCallback } from 'react'
 import { portfolioAPI, analyticsAPI, plannerAPI, fundsAPI } from '../lib/api'
 import { Holding, DudFund, TaxSummary } from '../types'
 import { fmtINR, fmtPct, dudColor, colorForValue } from '../lib/utils'
-import { Upload, FileText, Lock, ChevronDown, ChevronUp, Download, AlertTriangle, Plus, X, Search, CheckCircle } from 'lucide-react'
+import {
+  Upload, FileText, Lock, ChevronDown, ChevronUp, Download, AlertTriangle,
+  Plus, X, Search, CheckCircle, Trash2, Calendar, TrendingUp, RefreshCw,
+  Clock, Info, Sparkles
+} from 'lucide-react'
 
 // ── Manual Add Fund types ──────────────────────────────────────────────
 interface FundSearchResult { scheme_code: number; scheme_name: string; category?: string }
+
+type EntryMode = 'date' | 'current_value' | 'units'
+
 interface ManualForm {
   fundQuery: string
   selectedFund: FundSearchResult | null
   investedAmount: string
   investmentDate: string
   investmentType: 'SIP' | 'LUMPSUM'
+  entryMode: EntryMode
+  currentValue: string
+  units: string
 }
+
+interface PreviewCalc {
+  histNav: number
+  latestNav: number
+  histDate: string
+  units: number
+  currentValue: number
+  gainLoss: number
+  gainPct: number
+  cagr: number | null
+  loading: boolean
+}
+
 const emptyForm = (): ManualForm => ({
   fundQuery: '',
   selectedFund: null,
   investedAmount: '',
   investmentDate: new Date().toISOString().split('T')[0],
-  investmentType: 'SIP',
+  investmentType: 'LUMPSUM',
+  entryMode: 'date',
+  currentValue: '',
+  units: '',
 })
 
 export default function PortfolioTab() {
@@ -33,7 +59,12 @@ export default function PortfolioTab() {
   const [expandedFund, setExpandedFund] = useState<number | null>(null)
   const [casError, setCasError] = useState<string | null>(null)
   const [showTax, setShowTax] = useState(false)
+  const [refreshingNavs, setRefreshingNavs] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── Delete Confirmation state ───────────────────────────────────────
+  const [fundToDelete, setFundToDelete] = useState<Holding | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   // ── Manual Add Fund state ──────────────────────────────────────────
   const [showManual, setShowManual] = useState(false)
@@ -42,8 +73,10 @@ export default function PortfolioTab() {
   const [searchLoading, setSearchLoading] = useState(false)
   const [manualLoading, setManualLoading] = useState(false)
   const [manualError, setManualError] = useState<string | null>(null)
-  const [manualSuccess, setManualSuccess] = useState(false)
+  const [manualSuccess, setManualSuccess] = useState<string | null>(null)
+  const [previewCalc, setPreviewCalc] = useState<PreviewCalc | null>(null)
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const calcTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const loadHoldings = async () => {
     setLoading(true)
@@ -61,6 +94,15 @@ export default function PortfolioTab() {
     }
   }
 
+  const handleRefreshNavs = async () => {
+    setRefreshingNavs(true)
+    try {
+      await loadHoldings()
+    } finally {
+      setRefreshingNavs(false)
+    }
+  }
+
   const loadTax = async () => {
     try {
       const { data } = await plannerAPI.taxPack()
@@ -70,6 +112,111 @@ export default function PortfolioTab() {
   }
 
   useEffect(() => { loadHoldings() }, [])
+
+  // ── Calculate CAGR Helper ──────────────────────────────────────────
+  const calcCAGR = (invested: number, currentVal: number, dateStr: string): number | null => {
+    if (!dateStr || invested <= 0 || currentVal <= 0) return null
+    const diffYears = (Date.now() - new Date(dateStr).getTime()) / (365.25 * 24 * 3600 * 1000)
+    if (diffYears < 0.25) return null
+    return (Math.pow(currentVal / invested, 1 / diffYears) - 1) * 100
+  }
+
+  // ── Real-time Growth & Units Preview Calculator ─────────────────────
+  const updatePreview = useCallback(async (form: ManualForm) => {
+    if (!form.selectedFund) {
+      setPreviewCalc(null)
+      return
+    }
+
+    const invested = parseFloat(form.investedAmount)
+    if (!invested || invested <= 0) {
+      setPreviewCalc(null)
+      return
+    }
+
+    const schemeCode = form.selectedFund.scheme_code
+
+    try {
+      if (form.entryMode === 'date') {
+        const { data } = await fundsAPI.navOnDate(schemeCode, form.investmentDate)
+        const histNav = Number(data.nav) || 10
+        const latestNav = Number(data.latest_nav) || histNav
+        const units = invested / histNav
+        const currentVal = units * latestNav
+        const gainLoss = currentVal - invested
+        const gainPct = (gainLoss / invested) * 100
+        const cagr = calcCAGR(invested, currentVal, form.investmentDate)
+
+        setPreviewCalc({
+          histNav,
+          latestNav,
+          histDate: data.matched_date || form.investmentDate,
+          units,
+          currentValue: currentVal,
+          gainLoss,
+          gainPct,
+          cagr,
+          loading: false,
+        })
+      } else if (form.entryMode === 'current_value') {
+        const { data: latestData } = await fundsAPI.latestNav(schemeCode)
+        const latestNav = Number(latestData?.nav || latestData?.latest_nav) || 10
+        const currentVal = parseFloat(form.currentValue) || invested
+        const units = currentVal / latestNav
+        const histNav = invested / units
+        const gainLoss = currentVal - invested
+        const gainPct = (gainLoss / invested) * 100
+        const cagr = calcCAGR(invested, currentVal, form.investmentDate)
+
+        setPreviewCalc({
+          histNav,
+          latestNav,
+          histDate: form.investmentDate,
+          units,
+          currentValue: currentVal,
+          gainLoss,
+          gainPct,
+          cagr,
+          loading: false,
+        })
+      } else if (form.entryMode === 'units') {
+        const { data: latestData } = await fundsAPI.latestNav(schemeCode)
+        const latestNav = Number(latestData?.nav || latestData?.latest_nav) || 10
+        const units = parseFloat(form.units) || 1
+        const currentVal = units * latestNav
+        const histNav = invested / units
+        const gainLoss = currentVal - invested
+        const gainPct = (gainLoss / invested) * 100
+        const cagr = calcCAGR(invested, currentVal, form.investmentDate)
+
+        setPreviewCalc({
+          histNav,
+          latestNav,
+          histDate: form.investmentDate,
+          units,
+          currentValue: currentVal,
+          gainLoss,
+          gainPct,
+          cagr,
+          loading: false,
+        })
+      }
+    } catch {
+      setPreviewCalc(null)
+    }
+  }, [])
+
+  // Debounce preview calculations on input change
+  useEffect(() => {
+    if (calcTimer.current) clearTimeout(calcTimer.current)
+    if (manualForm.selectedFund && manualForm.investedAmount) {
+      calcTimer.current = setTimeout(() => {
+        updatePreview(manualForm)
+      }, 350)
+    } else {
+      setPreviewCalc(null)
+    }
+  }, [manualForm, updatePreview])
 
   // ── Fund search with debounce ──────────────────────────────────────
   const searchFunds = useCallback((q: string) => {
@@ -101,40 +248,83 @@ export default function PortfolioTab() {
     setFundSuggestions([])
   }
 
+  const setDatePreset = (yearsAgo: number) => {
+    const d = new Date()
+    if (yearsAgo === 0) {
+      setManualForm((f) => ({ ...f, investmentDate: d.toISOString().split('T')[0] }))
+      return
+    }
+    d.setFullYear(d.getFullYear() - yearsAgo)
+    setManualForm((f) => ({ ...f, investmentDate: d.toISOString().split('T')[0] }))
+  }
+
+  // ── Existing fund accumulation check ──────────────────────────────
+  const existingHolding = holdings.find(
+    (h) => h.scheme_code === manualForm.selectedFund?.scheme_code
+  )
+
   const handleManualSubmit = async () => {
     setManualError(null)
-    if (!manualForm.selectedFund) return setManualError('Please search and select a fund.')
+    if (!manualForm.selectedFund) return setManualError('Please search and select a mutual fund.')
     const amount = parseFloat(manualForm.investedAmount)
     if (!amount || amount <= 0) return setManualError('Enter a valid invested amount.')
 
-    // Fetch latest NAV to compute units
     setManualLoading(true)
     try {
-      const { data: navData } = await fundsAPI.latestNav(manualForm.selectedFund.scheme_code)
-      const nav = navData?.nav || navData?.latest_nav || 10
-      const units = amount / nav
-
-      await portfolioAPI.addHolding({
+      const payload: any = {
         scheme_code: manualForm.selectedFund.scheme_code,
         scheme_name: manualForm.selectedFund.scheme_name,
-        units,
-        avg_nav: nav,
+        invested_amount: amount,
+        investment_date: manualForm.investmentDate,
         investment_type: manualForm.investmentType,
         category: manualForm.selectedFund.category || 'Equity',
-      })
+      }
 
-      setManualSuccess(true)
+      if (previewCalc && previewCalc.units > 0) {
+        payload.units = previewCalc.units
+        payload.avg_nav = previewCalc.histNav
+        payload.current_value = previewCalc.currentValue
+      } else {
+        const { data: navData } = await fundsAPI.latestNav(manualForm.selectedFund.scheme_code)
+        const nav = navData?.nav || navData?.latest_nav || 10
+        payload.units = amount / nav
+        payload.avg_nav = nav
+        payload.current_value = amount
+      }
+
+      const res = await portfolioAPI.addHolding(payload)
+      const actionMsg = res.data?.action === 'accumulated'
+        ? `Investment merged! Updated total value: ${fmtINR(res.data?.holding?.current_value || 0)}`
+        : 'Fund added to portfolio successfully!'
+
+      setManualSuccess(actionMsg)
       setTimeout(() => {
-        setManualSuccess(false)
+        setManualSuccess(null)
         setShowManual(false)
         setManualForm(emptyForm())
         setFundSuggestions([])
+        setPreviewCalc(null)
         loadHoldings()
       }, 1500)
     } catch (err: any) {
-      setManualError(err.response?.data?.detail || 'Failed to add fund. Try again.')
+      setManualError(err.response?.data?.detail || 'Failed to add fund. Please try again.')
     } finally {
       setManualLoading(false)
+    }
+  }
+
+  // ── Delete Holding ─────────────────────────────────────────────────
+  const handleConfirmDelete = async () => {
+    if (!fundToDelete) return
+    setDeleteLoading(true)
+    try {
+      await portfolioAPI.deleteHolding(fundToDelete.scheme_code)
+      setFundToDelete(null)
+      await loadHoldings()
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to remove fund.')
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -167,8 +357,7 @@ export default function PortfolioTab() {
           <FileText className="w-4 h-4 text-indigo-400" /> Import Portfolio via CAS
         </p>
         <p className="text-xs text-slate-500 mb-3">
-          Upload your CAMS/KFintech CAS PDF statement. Your PAN is used only in memory to decrypt
-          the PDF and is never stored.
+          Upload your CAMS/KFintech CAS PDF statement. All holdings and past transactions are automatically imported.
         </p>
 
         <button
@@ -183,13 +372,13 @@ export default function PortfolioTab() {
           <div className="mb-3">
             <input
               className="input"
-              placeholder="Enter PAN (e.g. ABCDE1234F) — not stored"
+              placeholder="Enter PAN (e.g. ABCDE1234F) — used only in memory"
               value={pan}
               onChange={(e) => setPan(e.target.value.toUpperCase())}
               maxLength={10}
             />
             <p className="text-xs text-slate-600 mt-1 flex items-center gap-1">
-              <Lock className="w-3 h-3" /> Used in-memory only. Cleared after parsing.
+              <Lock className="w-3 h-3" /> Zero-retention: PAN is discarded immediately after parsing.
             </p>
           </div>
         )}
@@ -208,10 +397,10 @@ export default function PortfolioTab() {
         )}
       </div>
 
-      {/* ── Add Fund Manually ─────────────────────── */}
+      {/* ── Add Fund Manually (Enhanced) ─────────── */}
       <div className="card">
         <button
-          onClick={() => { setShowManual((p) => !p); setManualError(null); setManualSuccess(false) }}
+          onClick={() => { setShowManual((p) => !p); setManualError(null); setManualSuccess(null) }}
           className="flex items-center justify-between w-full"
         >
           <span className="section-title mb-0 flex items-center gap-2">
@@ -223,19 +412,19 @@ export default function PortfolioTab() {
         </button>
 
         {showManual && (
-          <div className="mt-4 space-y-3">
-            <p className="text-xs text-slate-500">
-              Log a fund investment without a CAS PDF. NAV is auto-fetched to calculate your units.
+          <div className="mt-4 space-y-3.5">
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Add any mutual fund investment. If you bought it years ago, select your investment date or today's value and the app will automatically calculate your total units, profit, and percentage growth.
             </p>
 
-            {/* Fund Search */}
+            {/* 1. Fund Search */}
             <div className="relative">
-              <label className="text-xs text-slate-400 mb-1 block">Fund Name</label>
+              <label className="text-xs text-slate-400 mb-1 block font-medium">1. Select Mutual Fund</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   className="input pl-9"
-                  placeholder="Search fund (e.g. Nippon Small Cap)…"
+                  placeholder="Search fund (e.g. Nippon India Small Cap, Motilal Oswal Midcap)…"
                   value={manualForm.fundQuery}
                   onChange={(e) => handleFundQueryChange(e.target.value)}
                 />
@@ -247,15 +436,15 @@ export default function PortfolioTab() {
               </div>
               {/* Dropdown */}
               {fundSuggestions.length > 0 && (
-                <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-xl max-h-56 overflow-y-auto">
+                <div className="absolute z-20 left-0 right-0 top-full mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-2xl max-h-56 overflow-y-auto">
                   {fundSuggestions.map((f) => (
                     <button
                       key={f.scheme_code}
                       onMouseDown={() => selectFund(f)}
                       className="w-full text-left px-3 py-2.5 hover:bg-slate-700 transition-colors border-b border-slate-700/50 last:border-0"
                     >
-                      <p className="text-sm text-slate-200 leading-tight">{f.scheme_name}</p>
-                      {f.category && <p className="text-xs text-slate-500 mt-0.5">{f.category}</p>}
+                      <p className="text-sm text-slate-100 font-medium leading-tight">{f.scheme_name}</p>
+                      {f.category && <p className="text-xs text-indigo-400 mt-0.5">{f.category}</p>}
                     </button>
                   ))}
                 </div>
@@ -264,65 +453,240 @@ export default function PortfolioTab() {
 
             {/* Selected fund badge */}
             {manualForm.selectedFund && (
-              <div className="flex items-center gap-2 bg-indigo-900/30 border border-indigo-700/50 rounded-lg px-3 py-2">
+              <div className="flex items-center gap-2 bg-indigo-950/60 border border-indigo-700/60 rounded-xl px-3 py-2.5">
                 <CheckCircle className="w-4 h-4 text-indigo-400 shrink-0" />
-                <p className="text-xs text-indigo-300 font-medium truncate">{manualForm.selectedFund.scheme_name}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs text-indigo-300 font-semibold truncate">{manualForm.selectedFund.scheme_name}</p>
+                  <p className="text-[11px] text-slate-400">AMFI Code: {manualForm.selectedFund.scheme_code}</p>
+                </div>
               </div>
             )}
 
-            {/* Amount */}
+            {/* Existing Fund Auto-Accumulation Alert */}
+            {existingHolding && (
+              <div className="bg-indigo-900/30 border border-indigo-600/50 rounded-xl p-3 text-xs space-y-1.5">
+                <div className="flex items-center gap-1.5 font-semibold text-indigo-300">
+                  <Sparkles className="w-4 h-4 text-yellow-400" />
+                  Auto-Accumulate into Existing Balance
+                </div>
+                <p className="text-slate-300 leading-normal">
+                  You already have this fund in your portfolio! Entering this new amount will automatically add to your existing holding.
+                </p>
+                <div className="flex items-center justify-between pt-1 border-t border-indigo-800/40 text-[11px]">
+                  <span className="text-slate-400">Current Value: <strong className="text-white">{fmtINR(existingHolding.current_value)}</strong></span>
+                  <span className="text-emerald-400 font-semibold">
+                    New Value: {fmtINR(existingHolding.current_value + (previewCalc?.currentValue || parseFloat(manualForm.investedAmount) || 0))}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 2. Invested Amount */}
             <div>
-              <label className="text-xs text-slate-400 mb-1 block">Invested Amount (₹)</label>
+              <label className="text-xs text-slate-400 mb-1 block font-medium">2. Invested Amount (₹)</label>
               <input
                 className="input"
                 type="number"
-                placeholder="e.g. 5000"
+                placeholder="e.g. 25000"
                 value={manualForm.investedAmount}
                 onChange={(e) => setManualForm((f) => ({ ...f, investedAmount: e.target.value }))}
                 min={1}
               />
             </div>
 
-            {/* Investment Type */}
+            {/* 3. When did you invest? */}
             <div>
-              <label className="text-xs text-slate-400 mb-1 block">Investment Type</label>
-              <div className="flex gap-2">
-                {(['SIP', 'LUMPSUM'] as const).map((t) => (
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-400" /> 3. When did you invest?
+                </label>
+                <span className="text-[11px] text-slate-500">Pick date or quick preset</span>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="flex gap-1.5 mb-2 overflow-x-auto pb-0.5">
+                {[
+                  { label: 'Today', years: 0 },
+                  { label: '1Y Ago', years: 1 },
+                  { label: '3Y Ago', years: 3 },
+                  { label: '5Y Ago', years: 5 },
+                  { label: '10Y Ago', years: 10 },
+                ].map((preset) => (
                   <button
-                    key={t}
-                    onClick={() => setManualForm((f) => ({ ...f, investmentType: t }))}
-                    className={`flex-1 py-2 rounded-xl text-sm font-medium border transition-all ${
-                      manualForm.investmentType === t
-                        ? 'bg-indigo-600 border-indigo-500 text-white'
-                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                    key={preset.label}
+                    type="button"
+                    onClick={() => setDatePreset(preset.years)}
+                    className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white border border-slate-700 transition-colors whitespace-nowrap"
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              <input
+                type="date"
+                className="input text-sm"
+                value={manualForm.investmentDate}
+                max={new Date().toISOString().split('T')[0]}
+                onChange={(e) => setManualForm((f) => ({ ...f, investmentDate: e.target.value }))}
+              />
+            </div>
+
+            {/* 4. Entry Mode Selector */}
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block font-medium">
+                4. Units & Valuation Mode
+              </label>
+              <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-900 rounded-xl">
+                {[
+                  { id: 'date', label: 'Auto (Date NAV)' },
+                  { id: 'current_value', label: "Today's Value" },
+                  { id: 'units', label: 'Exact Units' },
+                ].map((mode) => (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => setManualForm((f) => ({ ...f, entryMode: mode.id as EntryMode }))}
+                    className={`py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                      manualForm.entryMode === mode.id
+                        ? 'bg-indigo-600 text-white'
+                        : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >
-                    {t === 'SIP' ? '📅 SIP' : '💰 Lumpsum'}
+                    {mode.label}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Error / Success */}
+            {/* Optional Current Value input */}
+            {manualForm.entryMode === 'current_value' && (
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">What is its value today? (₹)</label>
+                <input
+                  type="number"
+                  className="input"
+                  placeholder="e.g. 100000"
+                  value={manualForm.currentValue}
+                  onChange={(e) => setManualForm((f) => ({ ...f, currentValue: e.target.value }))}
+                  min={1}
+                />
+              </div>
+            )}
+
+            {/* Optional Units input */}
+            {manualForm.entryMode === 'units' && (
+              <div>
+                <label className="text-xs text-slate-400 mb-1 block">Exact Units Owned</label>
+                <input
+                  type="number"
+                  step="any"
+                  className="input"
+                  placeholder="e.g. 450.250"
+                  value={manualForm.units}
+                  onChange={(e) => setManualForm((f) => ({ ...f, units: e.target.value }))}
+                  min={0.001}
+                />
+              </div>
+            )}
+
+            {/* Investment Type */}
+            <div>
+              <label className="text-xs text-slate-400 mb-1 block font-medium">5. Investment Type</label>
+              <div className="flex gap-2">
+                {(['LUMPSUM', 'SIP'] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setManualForm((f) => ({ ...f, investmentType: t }))}
+                    className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                      manualForm.investmentType === t
+                        ? 'bg-indigo-600 border-indigo-500 text-white'
+                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {t === 'SIP' ? '📅 SIP' : '💰 One-time Lumpsum'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Live Growth & Return Summary Card ──────── */}
+            {previewCalc && (
+              <div className="bg-slate-900 border border-slate-700/80 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" /> Calculated Growth & Valuation
+                  </span>
+                  <span className="text-[11px] text-slate-400">Live AMFI/MFAPI</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="bg-slate-800/80 rounded-xl p-2.5">
+                    <span className="text-[11px] text-slate-400">Invested Amount</span>
+                    <p className="text-sm font-bold text-slate-100">{fmtINR(parseFloat(manualForm.investedAmount) || 0)}</p>
+                    <span className="text-[10px] text-slate-500">Buy NAV: ₹{previewCalc.histNav.toFixed(2)}</span>
+                  </div>
+
+                  <div className="bg-slate-800/80 rounded-xl p-2.5">
+                    <span className="text-[11px] text-slate-400">Current Value Today</span>
+                    <p className="text-sm font-bold text-emerald-400">{fmtINR(previewCalc.currentValue)}</p>
+                    <span className="text-[10px] text-slate-500">Live NAV: ₹{previewCalc.latestNav.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center pt-1 border-t border-slate-800">
+                  <div className="bg-slate-800/50 rounded-lg py-1.5 px-1">
+                    <span className="text-[10px] text-slate-400 block">Total Profit</span>
+                    <span className={`text-xs font-bold ${previewCalc.gainLoss >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {previewCalc.gainLoss >= 0 ? '+' : ''}{fmtINR(previewCalc.gainLoss)}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-800/50 rounded-lg py-1.5 px-1">
+                    <span className="text-[10px] text-slate-400 block">Total Return</span>
+                    <span className={`text-xs font-bold ${previewCalc.gainPct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                      {previewCalc.gainPct >= 0 ? '+' : ''}{previewCalc.gainPct.toFixed(1)}%
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-800/50 rounded-lg py-1.5 px-1">
+                    <span className="text-[10px] text-slate-400 block">CAGR (p.a.)</span>
+                    <span className="text-xs font-bold text-indigo-300">
+                      {previewCalc.cagr !== null ? `${previewCalc.cagr.toFixed(1)}%` : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1 border-t border-slate-800">
+                  <span>Units: <strong className="text-slate-300">{previewCalc.units.toFixed(3)}</strong></span>
+                  <span>Date: {previewCalc.histDate}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Error / Success messages */}
             {manualError && (
-              <p className="text-red-400 text-xs bg-red-900/20 rounded-lg px-3 py-2">{manualError}</p>
+              <p className="text-red-400 text-xs bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">{manualError}</p>
             )}
             {manualSuccess && (
-              <p className="text-green-400 text-xs bg-green-900/20 rounded-lg px-3 py-2 flex items-center gap-1.5">
-                <CheckCircle className="w-3.5 h-3.5" /> Fund added! Refreshing portfolio…
+              <p className="text-green-400 text-xs bg-green-900/20 border border-green-800 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <CheckCircle className="w-4 h-4 shrink-0" /> {manualSuccess}
               </p>
             )}
 
             {/* Submit */}
             <button
               onClick={handleManualSubmit}
-              disabled={manualLoading || manualSuccess}
+              disabled={manualLoading || !!manualSuccess}
               className="btn-primary w-full flex items-center justify-center gap-2"
             >
               {manualLoading
-                ? 'Adding…'
+                ? 'Processing…'
                 : manualSuccess
-                ? '✓ Added!'
+                ? '✓ Success!'
+                : existingHolding
+                ? <><Sparkles className="w-4 h-4 text-yellow-400" /> Accumulate into Existing Fund</>
                 : <><Plus className="w-4 h-4" /> Add to Portfolio</>
               }
             </button>
@@ -334,6 +698,20 @@ export default function PortfolioTab() {
       {holdings.length > 0 && (
         <>
           <div className="card">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Portfolio Valuation (Auto-updates with market)
+              </span>
+              <button
+                onClick={handleRefreshNavs}
+                disabled={refreshingNavs}
+                className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+                title="Refresh latest market NAV"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${refreshingNavs ? 'animate-spin' : ''}`} />
+                {refreshingNavs ? 'Updating…' : 'Refresh NAVs'}
+              </button>
+            </div>
             <div className="grid grid-cols-3 gap-2">
               <SummaryBox label="Invested" value={fmtINR(totalInvested)} />
               <SummaryBox label="Current Value" value={fmtINR(totalValue)} color="text-green-400" />
@@ -345,13 +723,19 @@ export default function PortfolioTab() {
             </div>
           </div>
 
-          {/* ── Holdings List ─────────────────────── */}
+          {/* ── Holdings List (Locked & Auto-Updating) ────────────────── */}
           <div className="card">
-            <p className="section-title">Holdings ({holdings.length})</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="section-title mb-0">Holdings ({holdings.length})</p>
+              <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                <Lock className="w-3 h-3 text-slate-500" /> Market Linked
+              </span>
+            </div>
             <div className="space-y-2">
               {holdings.map((h) => {
                 const dud = duds.find((d) => d.scheme_code === h.scheme_code)
                 const isExpanded = expandedFund === h.scheme_code
+                const gainPct = h.invested > 0 ? (h.gain_loss / h.invested) * 100 : 0
                 return (
                   <div
                     key={h.scheme_code}
@@ -374,8 +758,8 @@ export default function PortfolioTab() {
                                 <AlertTriangle className="w-3 h-3" /> {dud.severity}
                               </span>
                             )}
-                            <span className={`text-xs font-medium ${colorForValue(h.gain_loss)}`}>
-                              {fmtPct((h.gain_loss / h.invested) * 100)}
+                            <span className={`text-xs font-semibold ${colorForValue(h.gain_loss)}`}>
+                              {gainPct >= 0 ? '+' : ''}{gainPct.toFixed(1)}%
                             </span>
                           </div>
                         </div>
@@ -395,9 +779,14 @@ export default function PortfolioTab() {
                       <div className="px-3 pb-3 border-t border-slate-700/50">
                         <div className="grid grid-cols-3 gap-2 mt-2">
                           <MiniStat label="Units" value={h.units?.toFixed(3)} />
-                          <MiniStat label="Avg NAV" value={`₹${h.avg_nav?.toFixed(2)}`} />
-                          <MiniStat label="XIRR" value={fmtPct(h.xirr)} color={colorForValue(h.xirr)} />
+                          <MiniStat label="Avg Buy NAV" value={`₹${h.avg_nav?.toFixed(2)}`} />
+                          <MiniStat label="Live NAV" value={`₹${h.current_nav?.toFixed(2)}`} color="text-indigo-300" />
                         </div>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <MiniStat label="Total Gain / Profit" value={`${h.gain_loss >= 0 ? '+' : ''}${fmtINR(h.gain_loss)}`} color={colorForValue(h.gain_loss)} />
+                          <MiniStat label="Overall Return" value={`${gainPct >= 0 ? '+' : ''}${gainPct.toFixed(2)}%`} color={colorForValue(gainPct)} />
+                        </div>
+
                         {dud && dud.severity !== 'CLEAN' && (
                           <div className="mt-2 bg-red-900/20 rounded-lg px-2 py-1.5">
                             <p className="text-xs text-red-300 font-semibold mb-1">⚠️ Dud Fund Flags</p>
@@ -407,6 +796,23 @@ export default function PortfolioTab() {
                             <p className="text-xs text-slate-400 mt-1">💡 {dud.suggestion}</p>
                           </div>
                         )}
+
+                        {/* Holding Action: Remove from Portfolio */}
+                        <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between">
+                          <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                            <Lock className="w-3 h-3 text-slate-500" /> Values auto-update with market
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setFundToDelete(h)
+                            }}
+                            className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 hover:bg-red-950/40 px-2.5 py-1.5 rounded-lg border border-red-900/50 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" /> Remove from Portfolio
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -494,8 +900,43 @@ export default function PortfolioTab() {
       {holdings.length === 0 && !loading && (
         <div className="text-center py-10 text-slate-500">
           <FileText className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="text-sm mb-1">No holdings yet</p>
-          <p className="text-xs text-slate-600">Upload your CAS PDF above, or use <strong className="text-slate-400">Add Fund Manually</strong> to log funds one by one.</p>
+          <p className="text-sm mb-1 font-semibold text-slate-400">No holdings in your portfolio</p>
+          <p className="text-xs text-slate-500 max-w-xs mx-auto">
+            Upload your CAS statement PDF above, or click <strong className="text-indigo-400">Add Fund Manually</strong> to record past investments and track their live gains.
+          </p>
+        </div>
+      )}
+
+      {/* ── Delete Confirmation Modal ─────────────── */}
+      {fundToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 shadow-2xl">
+            <div className="w-10 h-10 rounded-xl bg-red-900/30 border border-red-800 flex items-center justify-center text-red-400 mb-3">
+              <Trash2 className="w-5 h-5" />
+            </div>
+            <h4 className="text-base font-bold text-white mb-1">Remove Fund from Portfolio?</h4>
+            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+              Are you sure you want to remove <span className="text-slate-100 font-semibold">{fundToDelete.scheme_name}</span>? This will remove all its units ({fundToDelete.units?.toFixed(3)}) and valuation ({fmtINR(fundToDelete.current_value)}) from your portfolio.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setFundToDelete(null)}
+                className="btn-secondary flex-1 text-sm py-2"
+                disabled={deleteLoading}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="btn-danger flex-1 text-sm py-2 flex items-center justify-center gap-1.5"
+                disabled={deleteLoading}
+              >
+                {deleteLoading ? 'Removing…' : 'Yes, Remove'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -523,4 +964,3 @@ function MiniStat({
     </div>
   )
 }
-

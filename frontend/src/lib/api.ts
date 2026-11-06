@@ -35,6 +35,8 @@ export const fundsAPI = {
   navHistory: (code: number, years = 1.0) =>
     api.get(`/funds/${code}/nav`, { params: { years } }),
   latestNav: (code: number) => api.get(`/funds/${code}/latest-nav`),
+  navOnDate: (code: number, date: string) =>
+    api.get(`/funds/${code}/nav-on-date`, { params: { date } }),
 }
 
 // ── Analytics ────────────────────────────────────────────────────────
@@ -103,6 +105,7 @@ export const portfolioAPI = {
   },
   holdings: () => api.get('/portfolio/holdings'),
   addHolding: (holding: any) => api.post('/portfolio/holdings', holding),
+  deleteHolding: (schemeCode: number) => api.delete(`/portfolio/holdings/${schemeCode}`),
   xray: (holdings: any[]) => api.post('/portfolio/xray', holdings),
 }
 

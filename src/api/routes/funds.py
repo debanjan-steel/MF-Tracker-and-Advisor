@@ -108,9 +108,58 @@ def get_nav_history(
 @router.get("/{scheme_code}/latest-nav", summary="Get latest NAV")
 def get_latest_nav(scheme_code: int):
     """Get the most recent NAV for a fund."""
-    nav = data_manager.get_latest_nav(scheme_code)
-    if nav is None:
+    nav_info = data_manager.get_latest_nav(scheme_code)
+    if nav_info is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="NAV not found.")
-    return {"scheme_code": scheme_code, "latest_nav": nav}
-    return {"scheme_code": scheme_code, "latest_nav": nav}
+    
+    nav_val = nav_info.get("nav") if isinstance(nav_info, dict) else nav_info
+    date_val = nav_info.get("date") if isinstance(nav_info, dict) else ""
+    return {
+        "scheme_code": scheme_code,
+        "nav": nav_val,
+        "latest_nav": nav_val,
+        "date": date_val,
+    }
+
+
+@router.get("/{scheme_code}/nav-on-date", summary="Get historical NAV on or before a specific date")
+def get_nav_on_date(
+    scheme_code: int,
+    date: str = Query(..., description="Target date in YYYY-MM-DD format"),
+):
+    """
+    Find the historical NAV of a fund on or immediately before a given date.
+    Useful for calculating units and growth for historical investments.
+    """
+    clean_date = date.strip()
+    try:
+        nav_data = data_manager.get_nav_history(scheme_code)
+        history = nav_data.get("data", [])
+        if not history:
+            raise HTTPException(status_code=404, detail="No historical NAV available.")
+
+        matched = None
+        for r in history:
+            if r.get("date") <= clean_date:
+                matched = r
+                break
+
+        if not matched:
+            matched = history[-1]
+
+        latest_val = float(history[0]["nav"]) if history else float(matched["nav"])
+        matched_nav = float(matched["nav"])
+
+        return {
+            "scheme_code": scheme_code,
+            "requested_date": clean_date,
+            "matched_date": matched["date"],
+            "nav": matched_nav,
+            "latest_nav": latest_val,
+            "latest_date": history[0]["date"] if history else matched["date"],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to fetch NAV for date {clean_date}: {str(e)}")
 
