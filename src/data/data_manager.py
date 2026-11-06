@@ -35,6 +35,7 @@ class DataManager:
 
     def __init__(self):
         self._amfi_cache: Optional[dict] = None  # In-memory cache for today's AMFI feed
+        self._scheme_master_cache: Optional[list[dict]] = None
 
     # ------------------------------------------------------------------
     # AMFI feed — cached for the session to avoid repeated 3 MB downloads
@@ -48,13 +49,76 @@ class DataManager:
         return self._amfi_cache
 
     # ------------------------------------------------------------------
-    # Scheme Search
+    # Scheme Search — Smart token-based fuzzy matching
     # ------------------------------------------------------------------
 
+    def _normalize_search_text(self, text: str) -> str:
+        import re
+        t = text.lower()
+        t = re.sub(r'mid\s+cap', 'midcap', t)
+        t = re.sub(r'small\s+cap', 'smallcap', t)
+        t = re.sub(r'large\s+cap', 'largecap', t)
+        t = re.sub(r'flexi\s+cap', 'flexicap', t)
+        t = re.sub(r'multi\s+cap', 'multicap', t)
+        return t
+
     def search(self, query: str) -> list[dict]:
-        """Search for mutual fund schemes by name or AMC (uses MFAPI search)."""
-        logger.info(f"[DataManager] Searching for: '{query}'")
-        return search_schemes(query)
+        """
+        Fuzzy, relaxed, token-based mutual fund search.
+        Handles variations like 'mid cap' vs 'midcap', filler words ('fund'),
+        and word order flexibility across all Indian mutual fund schemes.
+        """
+        if not query or len(query.strip()) < 2:
+            return []
+
+        import re
+        logger.info(f"[DataManager] Smart searching for: '{query}'")
+
+        # Load master list if not cached
+        if self._scheme_master_cache is None:
+            try:
+                self._scheme_master_cache = get_all_scheme_codes()
+            except Exception as e:
+                logger.warning(f"[DataManager] Failed to load full scheme master: {e}")
+                return search_schemes(query)
+
+        norm_q = self._normalize_search_text(query.strip())
+        raw_tokens = [tok for tok in re.split(r'[^a-z0-9]+', norm_q) if tok]
+        significant_tokens = [tok for tok in raw_tokens if tok not in {'fund', 'mf', 'scheme', 'mutual'}]
+        tokens = significant_tokens if significant_tokens else raw_tokens
+
+        results = []
+        for item in self._scheme_master_cache:
+            name = item.get("schemeName") or item.get("scheme_name") or ""
+            norm_name = self._normalize_search_text(name)
+
+            if all(tok in norm_name for tok in tokens):
+                score = 0
+                if "direct" in norm_name:
+                    score += 20
+                if "growth" in norm_name:
+                    score += 10
+                if norm_q in norm_name:
+                    score += 30
+                score -= len(norm_name) * 0.05
+                results.append((score, item))
+
+        # Fallback if no exact match: allow one missing token for long queries
+        if not results and len(tokens) > 2:
+            for item in self._scheme_master_cache:
+                name = item.get("schemeName") or item.get("scheme_name") or ""
+                norm_name = self._normalize_search_text(name)
+                matched_count = sum(1 for tok in tokens if tok in norm_name)
+                if matched_count >= len(tokens) - 1:
+                    score = matched_count * 5
+                    if "direct" in norm_name:
+                        score += 20
+                    if "growth" in norm_name:
+                        score += 10
+                    results.append((score, item))
+
+        results.sort(key=lambda x: x[0], reverse=True)
+        return [r[1] for r in results[:30]]
 
     def get_scheme_master(self) -> list[dict]:
         """Return the complete master list of all AMFI-registered mutual fund schemes."""
