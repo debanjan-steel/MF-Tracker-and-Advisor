@@ -49,6 +49,19 @@ export const analyticsAPI = {
   stressScenarios: () => api.get('/analytics/stress-test/scenarios'),
   stressTest: (scenario: string, portfolioValue = 500000) =>
     api.get(`/analytics/stress-test/${scenario}`, { params: { portfolio_value: portfolioValue } }),
+  stressSimulate: (data: {
+    portfolio_value: number
+    holdings?: any[]
+    scenario_key: string
+    custom_drawdown_pct?: number
+    custom_recovery_months?: number
+    custom_macro_inputs?: any
+  }) => api.post('/analytics/stress-test/simulate', data),
+  monteCarlo: (code: number, days = 30, simulations = 1000) =>
+    api.get(`/analytics/monte-carlo/${code}`, { params: { horizon_days: days, simulations } }),
+  monteCarloPortfolio: (portfolio_value: number, days = 30, holdings?: any[]) =>
+    api.post('/analytics/monte-carlo/portfolio', { portfolio_value, horizon_days: days, holdings }),
+  macroAnalogue: () => api.get('/analytics/macro-analogue/current'),
   thermometer: (code = 122640, category = 'Equity') =>
     api.get(`/analytics/thermometer/${code}`, { params: { category } }),
   thermometerBatch: (schemes: { scheme_code: number; scheme_name?: string; category?: string }[]) =>

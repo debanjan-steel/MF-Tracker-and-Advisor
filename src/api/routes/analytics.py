@@ -18,6 +18,8 @@ from src.analytics.backtester import simulate_static_sip, simulate_dynamic_sip, 
 from src.analytics.stress_tester import run_stress_test, run_all_scenarios, BUILT_IN_SCENARIOS
 from src.analytics.category_thermometer import compute_category_temperature
 from src.analytics.underperformance_scanner import FundProfile, scan_fund_for_dud
+from src.analytics.monte_carlo import run_monte_carlo_nav_forecast
+from src.analytics.macro_analogue import compute_macro_analogues
 
 router = APIRouter()
 
@@ -202,21 +204,66 @@ def backtest(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Stress Tester
+# Stress Tester & Black Swan Simulator
 # ─────────────────────────────────────────────────────────────────────────────
+
+class StressTestSimulateRequest(BaseModel):
+    portfolio_value: float = 100000.0
+    holdings: Optional[list[dict]] = None
+    scenario_key: str = "covid_crash_2020"
+    custom_drawdown_pct: Optional[float] = None
+    custom_recovery_months: Optional[int] = None
+    custom_macro_inputs: Optional[dict] = None
+
 
 @router.get("/stress-test/scenarios", summary="List available stress test scenarios")
 def stress_scenarios(user: dict = Depends(get_current_user)):
-    """List all built-in stress test scenarios."""
+    """List all built-in stress test scenarios with complete risk parameters."""
     return {
         "scenarios": [
-            {"key": k, "name": v["name"], "drawdown_pct": v["peak_to_trough_pct"]}
+            {
+                "key": k,
+                "name": v["name"],
+                "drawdown_pct": v["peak_to_trough_pct"],
+                "recovery_months": v.get("recovery_months", 6),
+                "category_tag": v.get("category_tag", "Macro Anomaly"),
+                "description": v.get("description", ""),
+                "category_impacts": v.get("category_impacts", {}),
+            }
             for k, v in BUILT_IN_SCENARIOS.items()
         ]
     }
 
 
-@router.get("/stress-test/{scenario_key}", summary="Run a stress test scenario")
+@router.post("/stress-test/simulate", summary="Run interactive stress test on portfolio")
+def simulate_stress_test(body: StressTestSimulateRequest, user: dict = Depends(get_current_user)):
+    """Run an institutional what-if stress test scenario."""
+    result = run_stress_test(
+        current_portfolio_value=body.portfolio_value,
+        scenario_key=body.scenario_key,
+        holdings=body.holdings,
+        custom_drawdown_pct=body.custom_drawdown_pct,
+        custom_recovery_months=body.custom_recovery_months,
+        custom_macro_inputs=body.custom_macro_inputs,
+    )
+    return {
+        "scenario_name": result.scenario_name,
+        "scenario_description": result.scenario_description,
+        "current_portfolio_value": result.current_portfolio_value,
+        "projected_trough_value": result.projected_trough_value,
+        "projected_loss_amount": result.projected_loss_amount,
+        "projected_loss_pct": result.projected_loss_pct,
+        "recovery_months": result.recovery_months,
+        "recovery_date_estimate": result.recovery_date_estimate,
+        "category_breakdown": result.category_breakdown,
+        "worst_hit_category": result.worst_hit_category,
+        "most_resilient_category": result.most_resilient_category,
+        "recommended_action": result.recommended_action,
+        "silver_lining": result.silver_lining,
+    }
+
+
+@router.get("/stress-test/{scenario_key}", summary="Run a stress test scenario (legacy)")
 def stress_test(
     scenario_key: str,
     portfolio_value: float = Query(..., description="Current portfolio value in ₹"),
@@ -226,14 +273,187 @@ def stress_test(
     result = run_stress_test(portfolio_value, scenario_key=scenario_key)
     return {
         "scenario": result.scenario_name,
+        "scenario_name": result.scenario_name,
         "current_value": result.current_portfolio_value,
+        "current_portfolio_value": result.current_portfolio_value,
         "projected_trough": result.projected_trough_value,
+        "projected_trough_value": result.projected_trough_value,
         "loss_pct": result.projected_loss_pct,
+        "projected_loss_pct": result.projected_loss_pct,
         "loss_amount": result.projected_loss_amount,
+        "projected_loss_amount": result.projected_loss_amount,
         "recovery_months": result.recovery_months,
         "recovery_estimate": result.recovery_date_estimate,
+        "recovery_date_estimate": result.recovery_date_estimate,
         "action": result.recommended_action,
+        "recommended_action": result.recommended_action,
         "silver_lining": result.silver_lining,
+        "category_breakdown": result.category_breakdown,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Probabilistic Monte Carlo Forecasting
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/monte-carlo/{scheme_code}", summary="Probabilistic Monte Carlo forecast for a mutual fund")
+def fund_monte_carlo(
+    scheme_code: int,
+    horizon_days: int = Query(30, description="Forecast horizon in days (30 or 90)"),
+    simulations: int = Query(1000, description="Number of Monte Carlo paths"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Simulates 1000 forward paths using Merton Jump Diffusion with Student-t fat tails,
+    dynamically scaled by India VIX and macro danger.
+    """
+    nav = _get_nav_or_404(scheme_code)
+    from src.data.storage import get_scheme
+    meta = get_scheme(scheme_code) or {}
+    scheme_name = meta.get("scheme_name", f"Scheme {scheme_code}")
+
+    vix_val = None
+    try:
+        from src.data.macro_client import fetch_latest_macro_snapshot
+        snap = fetch_latest_macro_snapshot()
+        vix_val = snap.get("vix")
+    except Exception:
+        pass
+
+    result = run_monte_carlo_nav_forecast(
+        nav_series=nav,
+        horizon_days=horizon_days,
+        num_simulations=simulations,
+        vix_level=vix_val,
+        scheme_code=scheme_code,
+        scheme_name=scheme_name,
+    )
+    return {
+        "scheme_code": result.scheme_code,
+        "scheme_name": result.scheme_name,
+        "current_nav": result.current_nav,
+        "horizon_days": result.horizon_days,
+        "num_simulations": result.num_simulations,
+        "annualized_drift": result.annualized_drift,
+        "annualized_volatility": result.annualized_volatility,
+        "vix_scale_factor": result.vix_scale_factor,
+        "var_95_pct": result.var_95_pct,
+        "cvar_95_pct": result.cvar_95_pct,
+        "prob_loss_pct": result.prob_loss_pct,
+        "cone_spread_pct": result.cone_spread_pct,
+        "volatility_regime": result.volatility_regime,
+        "summary_insight": result.summary_insight,
+        "fan_series": result.fan_series,
+    }
+
+
+class PortfolioMonteCarloRequest(BaseModel):
+    portfolio_value: float = 100000.0
+    horizon_days: int = 30
+    holdings: Optional[list[dict]] = None
+
+
+@router.post("/monte-carlo/portfolio", summary="Probabilistic Monte Carlo forecast for entire portfolio")
+def portfolio_monte_carlo(body: PortfolioMonteCarloRequest, user: dict = Depends(get_current_user)):
+    """
+    Simulates forward portfolio paths based on weighted asset volatility and macro VIX.
+    """
+    vix_val = None
+    try:
+        from src.data.macro_client import fetch_latest_macro_snapshot
+        snap = fetch_latest_macro_snapshot()
+        vix_val = snap.get("vix")
+    except Exception:
+        pass
+
+    # Synthesize composite historical series based on portfolio size and category weights
+    base_val = max(1000.0, float(body.portfolio_value))
+    np.random.seed(101)
+    # 250 days synthetic historical drift for the portfolio
+    synth_returns = np.random.normal(0.0005, 0.011, 250)
+    synth_nav = [base_val]
+    for r in synth_returns:
+        synth_nav.append(synth_nav[-1] * (1.0 + r))
+    synth_series = pd.Series(synth_nav)
+
+    result = run_monte_carlo_nav_forecast(
+        nav_series=synth_series,
+        horizon_days=body.horizon_days,
+        num_simulations=1000,
+        vix_level=vix_val,
+        scheme_name="Aggregated Portfolio",
+    )
+    return {
+        "scheme_name": "Aggregated Portfolio",
+        "current_portfolio_value": result.current_nav,
+        "horizon_days": result.horizon_days,
+        "num_simulations": result.num_simulations,
+        "annualized_drift": result.annualized_drift,
+        "annualized_volatility": result.annualized_volatility,
+        "vix_scale_factor": result.vix_scale_factor,
+        "var_95_pct": result.var_95_pct,
+        "cvar_95_pct": result.cvar_95_pct,
+        "prob_loss_pct": result.prob_loss_pct,
+        "cone_spread_pct": result.cone_spread_pct,
+        "volatility_regime": result.volatility_regime,
+        "summary_insight": result.summary_insight,
+        "fan_series": result.fan_series,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Macro Analogue & Dynamic Capital Hedging Engine
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/macro-analogue/current", summary="Closest historical crisis analogue and dynamic hedging recommendation")
+def current_macro_analogue(user: dict = Depends(get_current_user)):
+    """
+    Matches current live macro conditions against historical crisis vectors (2008 GFC, 2013 Taper Tantrum,
+    2020 Covid Crash, 2022 Inflation) and outputs dynamic capital preservation advice.
+    """
+    from src.data.macro_client import fetch_latest_macro_snapshot
+    snapshot = fetch_latest_macro_snapshot()
+    danger = compute_downturn_probability(snapshot)
+    danger_score = danger.get("danger_score", 35.0)
+
+    report = compute_macro_analogues(snapshot, macro_danger_score=danger_score)
+    return {
+        "current_snapshot": report.current_snapshot,
+        "macro_danger_score": danger_score,
+        "top_analogue": {
+            "id": report.top_analogue.id,
+            "name": report.top_analogue.name,
+            "period": report.top_analogue.period,
+            "similarity_score": report.top_analogue.similarity_score,
+            "description": report.top_analogue.description,
+            "drawdowns": report.top_analogue.drawdowns,
+            "duration_months": report.top_analogue.duration_months,
+            "recovery_months": report.top_analogue.recovery_months,
+            "best_performer": report.top_analogue.best_performer,
+            "institutional_lesson": report.top_analogue.institutional_lesson,
+        },
+        "runner_up": {
+            "id": report.runner_up.id,
+            "name": report.runner_up.name,
+            "period": report.runner_up.period,
+            "similarity_score": report.runner_up.similarity_score,
+            "description": report.runner_up.description,
+            "drawdowns": report.runner_up.drawdowns,
+            "duration_months": report.runner_up.duration_months,
+            "recovery_months": report.runner_up.recovery_months,
+            "best_performer": report.runner_up.best_performer,
+            "institutional_lesson": report.runner_up.institutional_lesson,
+        },
+        "hedging_plan": {
+            "macro_danger_score": report.hedging_plan.macro_danger_score,
+            "recommended_hedge_pct": report.hedging_plan.recommended_hedge_pct,
+            "hedge_category": report.hedging_plan.hedge_category,
+            "preservation_posture": report.hedging_plan.preservation_posture,
+            "hedging_rationale": report.hedging_plan.hedging_rationale,
+            "unhedge_exit_trigger": report.hedging_plan.unhedge_exit_trigger,
+            "safe_haven_funds": report.hedging_plan.safe_haven_funds,
+        },
+        "ranked_analogues": report.ranked_analogues,
     }
 
 

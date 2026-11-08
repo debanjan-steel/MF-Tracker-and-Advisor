@@ -16,6 +16,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts'
+import MonteCarloFanChart from '../components/MonteCarloFanChart'
 
 interface FundThermometer {
   scheme_code: number
@@ -510,6 +511,14 @@ export default function ExplorerTab() {
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* Probabilistic Monte Carlo Forecast */}
+          {selected && (
+            <MonteCarloFanChart
+              schemeCode={selected.scheme_code}
+              schemeName={selected.scheme_name}
+            />
+          )}
         </>
       )}
 
@@ -700,6 +709,12 @@ export default function ExplorerTab() {
                             </ResponsiveContainer>
                           </div>
                         )}
+
+                        {/* Probabilistic Monte Carlo Forecast */}
+                        <MonteCarloFanChart
+                          schemeCode={Number(w.scheme_code)}
+                          schemeName={w.scheme_name}
+                        />
                       </div>
                     )}
                   </div>
@@ -1150,6 +1165,14 @@ export default function ExplorerTab() {
                 <p>• <strong>Normal Range (±5% of 200 EMA):</strong> Deploys normal 1.0× monthly budget.</p>
                 <p>• <strong>Overheated (&gt; +15% of 200 EMA):</strong> Deploys 0.5× and preserves dry powder cash for the next market dip.</p>
               </div>
+
+              {/* Forward-Looking Probabilistic Monte Carlo Forecast */}
+              {btSelectedFund && (
+                <MonteCarloFanChart
+                  schemeCode={btSelectedFund.scheme_code}
+                  schemeName={btSelectedFund.scheme_name}
+                />
+              )}
             </div>
           ) : (
             <div className="card text-center py-10 text-slate-500">

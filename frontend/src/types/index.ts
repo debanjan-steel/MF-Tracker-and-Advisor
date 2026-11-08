@@ -104,6 +104,7 @@ export interface DudFund {
 export interface Holding {
   scheme_code: number
   scheme_name: string
+  category?: string
   units: number
   avg_nav: number
   current_nav: number
@@ -274,5 +275,126 @@ export interface SavedGoalPlan {
   milestone_alerts?: string[]
   created_at?: string
   updated_at?: string
+}
+
+// ── Probabilistic Monte Carlo Types ─────────────────────────
+export interface MonteCarloPoint {
+  day: number
+  date: string
+  p10: number
+  p25: number
+  p50: number
+  p75: number
+  p90: number
+}
+
+export interface MonteCarloResponse {
+  scheme_code?: number
+  scheme_name: string
+  current_nav?: number
+  current_portfolio_value?: number
+  horizon_days: number
+  num_simulations: number
+  annualized_drift: number
+  annualized_volatility: number
+  vix_scale_factor: number
+  var_95_pct: number
+  cvar_95_pct: number
+  prob_loss_pct: number
+  cone_spread_pct: number
+  volatility_regime: string
+  summary_insight: string
+  fan_series: MonteCarloPoint[]
+}
+
+// ── Black Swan Stress Testing Types ──────────────────────────
+export interface CategoryStressImpact {
+  category: string
+  scheme_name: string
+  current_value: number
+  scenario_impact_pct: number
+  projected_trough_value: number
+  loss: number
+}
+
+export interface DetailedStressTestResult {
+  scenario_name: string
+  scenario_description: string
+  current_portfolio_value: number
+  projected_trough_value: number
+  projected_loss_amount: number
+  projected_loss_pct: number
+  recovery_months: number
+  recovery_date_estimate: string
+  category_breakdown: CategoryStressImpact[]
+  worst_hit_category: string
+  most_resilient_category: string
+  recommended_action: string
+  silver_lining: string
+}
+
+export interface StressScenarioMeta {
+  key: string
+  name: string
+  drawdown_pct: number
+  recovery_months: number
+  category_tag: string
+  description: string
+  category_impacts: Record<string, number>
+}
+
+// ── Historical Macro Analogue & Hedging Types ────────────────
+export interface HistoricalAnalogue {
+  id: string
+  name: string
+  period: string
+  similarity_score: number
+  description: string
+  drawdowns: {
+    nifty_50: number
+    midcap: number
+    smallcap: number
+    liquid_debt: number
+  }
+  duration_months: number
+  recovery_months: number
+  best_performer: string
+  institutional_lesson: string
+}
+
+export interface DynamicHedgingPlan {
+  macro_danger_score: number
+  recommended_hedge_pct: number
+  hedge_category: string
+  preservation_posture: string
+  hedging_rationale: string
+  unhedge_exit_trigger: string
+  safe_haven_funds: {
+    category: string
+    scheme_name: string
+    yield_est: string
+  }[]
+}
+
+export interface MacroAnalogueResponse {
+  current_snapshot: {
+    vix: number
+    crude: number
+    us10y: number
+    usdinr: number
+    dxy: number
+  }
+  macro_danger_score: number
+  top_analogue: HistoricalAnalogue
+  runner_up: HistoricalAnalogue
+  hedging_plan: DynamicHedgingPlan
+  ranked_analogues: {
+    id: string
+    name: string
+    period: string
+    similarity_score: number
+    drawdowns: Record<string, number>
+    recovery_months: number
+  }[]
 }
 

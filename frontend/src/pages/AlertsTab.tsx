@@ -7,6 +7,7 @@ import {
   ShieldAlert, Clock, Sparkles, Check, CheckCircle2, SlidersHorizontal,
   ChevronDown, ChevronUp, Briefcase, ArrowRight,
 } from 'lucide-react'
+import MacroAnalogueCard from '../components/MacroAnalogueCard'
 
 const DEFAULT_SETTINGS: AlertSettings = {
   entry_alert: true,
@@ -262,6 +263,9 @@ export default function AlertsTab() {
           </div>
         )}
       </div>
+
+      {/* ── Macro Analogue & Dynamic Hedging Engine ──── */}
+      <MacroAnalogueCard />
 
       {/* ── Alerts Feed ────────────────────────────── */}
       {loading ? (

@@ -7,6 +7,8 @@ import {
   Plus, X, Search, CheckCircle, Trash2, Calendar, TrendingUp, RefreshCw,
   Clock, Info, Sparkles
 } from 'lucide-react'
+import BlackSwanStressTester from '../components/BlackSwanStressTester'
+import MonteCarloFanChart from '../components/MonteCarloFanChart'
 
 // ── Manual Add Fund types ──────────────────────────────────────────────
 interface FundSearchResult { scheme_code: number; scheme_name: string; category?: string }
@@ -896,6 +898,20 @@ export default function PortfolioTab() {
           </div>
         </>
       )}
+
+      {/* ── Probabilistic Monte Carlo Forecast for Portfolio ── */}
+      <MonteCarloFanChart
+        isPortfolio={true}
+        portfolioValue={totalValue > 0 ? totalValue : 500000}
+        holdings={holdings}
+        schemeName="Portfolio Growth & Uncertainty Distribution"
+      />
+
+      {/* ── Macro Stress Tester & Black Swan Simulator ── */}
+      <BlackSwanStressTester
+        holdings={holdings}
+        portfolioValue={totalValue}
+      />
 
       {holdings.length === 0 && !loading && (
         <div className="text-center py-10 text-slate-500">
