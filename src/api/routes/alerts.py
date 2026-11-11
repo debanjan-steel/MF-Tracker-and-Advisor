@@ -53,7 +53,14 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
     """
     Evaluates current market signals, macro conditions, and user portfolio holdings.
     Generates new in-app alerts based on the user's active preference toggles.
+    Automatically hydrates holdings from cloud if server container restarted.
     """
+    try:
+        from src.data.cloud_sync import ensure_user_holdings_hydrated
+        ensure_user_holdings_hydrated(user_id)
+    except Exception as e:
+        logger.warning(f"Error ensuring holdings hydrated in evaluate_and_generate_alerts: {e}")
+
     now = datetime.utcnow()
     expires_dt = now + timedelta(days=RETENTION_DAYS)
     expires_iso = expires_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -478,6 +485,12 @@ def _alert_rank(alert: dict) -> int:
 
 def get_active_user_alerts(user_id: str) -> List[dict]:
     """Retrieve all non-dismissed, non-expired alerts for user in strict priority order."""
+    try:
+        from src.data.cloud_sync import ensure_user_holdings_hydrated
+        ensure_user_holdings_hydrated(user_id)
+    except Exception as e:
+        logger.warning(f"Error ensuring holdings hydrated in get_active_user_alerts: {e}")
+
     with get_db() as conn:
         # Check holdings count: if holdings exist, purge any portfolio_empty alert
         holding_count = conn.execute(
@@ -553,6 +566,12 @@ def get_active_user_alerts(user_id: str) -> List[dict]:
 def get_alert_settings(user: dict = Depends(get_current_user)):
     """Retrieve user preference toggles for the 4 alert categories."""
     user_id = user["user_id"]
+    try:
+        from src.data.cloud_sync import ensure_user_alert_preferences_hydrated
+        ensure_user_alert_preferences_hydrated(user_id)
+    except Exception:
+        pass
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT entry_alert, macro_alert, sip_reminder, dud_alert FROM user_alert_preferences WHERE user_id = ?",
@@ -581,7 +600,7 @@ def get_alert_settings(user: dict = Depends(get_current_user)):
 
 @router.post("/settings", summary="Update alert preferences")
 def update_alert_settings(prefs: AlertPreferences, user: dict = Depends(get_current_user)):
-    """Update toggle preferences for the 4 alert types."""
+    """Update toggle preferences for the 4 alert types and sync to Supabase Cloud."""
     user_id = user["user_id"]
     with get_db() as conn:
         conn.execute(
@@ -603,6 +622,12 @@ def update_alert_settings(prefs: AlertPreferences, user: dict = Depends(get_curr
                 int(prefs.dud_alert),
             ),
         )
+
+    try:
+        from src.data.cloud_sync import save_user_alert_preferences_to_cloud
+        save_user_alert_preferences_to_cloud(user_id, prefs.model_dump())
+    except Exception as e:
+        logger.warning(f"Failed to sync alert preferences to cloud: {e}")
 
     return {"message": "Alert preferences saved.", "preferences": prefs.model_dump()}
 

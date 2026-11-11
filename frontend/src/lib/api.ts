@@ -159,6 +159,7 @@ export const portfolioAPI = {
   holdings: () => api.get('/portfolio/holdings'),
   addHolding: (holding: any) => api.post('/portfolio/holdings', holding),
   deleteHolding: (schemeCode: number) => api.delete(`/portfolio/holdings/${schemeCode}`),
+  syncBackup: (holdings: any[]) => api.post('/portfolio/sync-backup', { holdings }),
   xray: (holdings: any[]) => api.post('/portfolio/xray', holdings),
 }
 

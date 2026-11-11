@@ -635,6 +635,12 @@ def _generate_tax_pack_for_user(user_id: str, fy_end: Optional[date] = None) -> 
         fy_yr = fy_end.year
         fy_label = f"{fy_yr - 1}-{str(fy_yr)[-2:]}"
 
+    try:
+        from src.data.cloud_sync import ensure_user_holdings_hydrated
+        ensure_user_holdings_hydrated(user_id)
+    except Exception as e:
+        logger.warning(f"Error ensuring holdings hydrated in tax pack: {e}")
+
     conn = _get_portfolio_db()
     rows = []
     try:

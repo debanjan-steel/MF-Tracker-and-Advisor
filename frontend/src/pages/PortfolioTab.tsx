@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import BlackSwanStressTester from '../components/BlackSwanStressTester'
 import MonteCarloFanChart from '../components/MonteCarloFanChart'
+import { useAuthStore } from '../store/authStore'
 
 // ── Manual Add Fund types ──────────────────────────────────────────────
 interface FundSearchResult { scheme_code: number; scheme_name: string; category?: string }
@@ -50,7 +51,18 @@ const emptyForm = (): ManualForm => ({
 })
 
 export default function PortfolioTab() {
-  const [holdings, setHoldings] = useState<Holding[]>([])
+  const user = useAuthStore((s) => s.user)
+  const userStorageKey = `mf_portfolio_cache_${user?.id || 'default'}`
+
+  // Instant local cache initialization: prevents holdings from ever flickering or getting lost
+  const [holdings, setHoldings] = useState<Holding[]>(() => {
+    try {
+      const cached = localStorage.getItem(`mf_portfolio_cache_${user?.id || 'default'}`)
+      return cached ? JSON.parse(cached) : []
+    } catch {
+      return []
+    }
+  })
   const [duds, setDuds] = useState<DudFund[]>([])
   const [taxData, setTaxData] = useState<TaxSummary | null>(null)
   const [xray, setXray] = useState<any>(null)
@@ -90,7 +102,30 @@ export default function PortfolioTab() {
         analyticsAPI.dudScan(),
         portfolioAPI.xray([]),
       ])
-      if (h.status === 'fulfilled') setHoldings(h.value.data?.holdings || h.value.data || [])
+      if (h.status === 'fulfilled') {
+        const fetchedHoldings: Holding[] = h.value.data?.holdings || h.value.data || []
+        if (fetchedHoldings.length > 0) {
+          setHoldings(fetchedHoldings)
+          try {
+            localStorage.setItem(userStorageKey, JSON.stringify(fetchedHoldings))
+          } catch {}
+        } else {
+          // If server returned empty (e.g. fresh ephemeral deploy before cloud sync finished),
+          // check if client has cached holdings and auto-restore to server & cloud
+          try {
+            const cachedRaw = localStorage.getItem(userStorageKey)
+            const cachedHoldings: Holding[] = cachedRaw ? JSON.parse(cachedRaw) : []
+            if (cachedHoldings.length > 0) {
+              setHoldings(cachedHoldings)
+              portfolioAPI.syncBackup(cachedHoldings).catch(() => {})
+            } else {
+              setHoldings([])
+            }
+          } catch {
+            setHoldings([])
+          }
+        }
+      }
       if (d.status === 'fulfilled') setDuds(Array.isArray(d.value.data) ? d.value.data : [d.value.data])
       if (x.status === 'fulfilled') setXray(x.value.data)
     } finally {
@@ -390,6 +425,11 @@ export default function PortfolioTab() {
     setDeleteLoading(true)
     try {
       await portfolioAPI.deleteHolding(fundToDelete.scheme_code)
+      try {
+        const updated = holdings.filter((h) => h.scheme_code !== fundToDelete.scheme_code)
+        setHoldings(updated)
+        localStorage.setItem(userStorageKey, JSON.stringify(updated))
+      } catch {}
       setFundToDelete(null)
       await loadHoldings()
     } catch (err: any) {

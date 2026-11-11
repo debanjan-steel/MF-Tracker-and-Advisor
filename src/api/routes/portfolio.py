@@ -162,6 +162,13 @@ async def upload_cas(
         finally:
             conn.close()
 
+        # Cloud Persistence: Sync newly imported CAS holdings to Supabase Cloud
+        try:
+            from src.data.cloud_sync import sync_local_holdings_to_cloud
+            sync_local_holdings_to_cloud(user["user_id"])
+        except Exception as e:
+            logger.warning(f"Failed to sync holdings to cloud after CAS upload: {e}")
+
         return {
             "message": f"CAS parsed successfully. Imported {len(holdings)} fund holdings.",
             "investor_name": statement.investor_name,
@@ -183,8 +190,15 @@ async def upload_cas(
 def get_holdings(user: dict = Depends(get_current_user)):
     """
     Return the current user's portfolio holdings, automatically updated with live market NAV.
+    Automatically rehydrates holdings from Supabase Cloud if server container restarted.
     """
     user_id = user["user_id"]
+    try:
+        from src.data.cloud_sync import ensure_user_holdings_hydrated
+        ensure_user_holdings_hydrated(user_id)
+    except Exception as e:
+        logger.warning(f"Error ensuring holdings hydrated for {user_id}: {e}")
+
     conn = _get_portfolio_db()
     try:
         cur = conn.execute(
@@ -372,7 +386,7 @@ def add_holding(holding: HoldingInput, user: dict = Depends(get_current_user)):
         except Exception as e:
             logger.warning(f"Failed to auto-evaluate alerts on holding update: {e}")
 
-        return {
+        result_payload = {
             "success": True,
             "action": action,
             "message": (
@@ -396,11 +410,20 @@ def add_holding(holding: HoldingInput, user: dict = Depends(get_current_user)):
     finally:
         conn.close()
 
+    # Cloud Persistence: Sync updated holdings to Supabase Cloud so they survive deploys
+    try:
+        from src.data.cloud_sync import sync_local_holdings_to_cloud
+        sync_local_holdings_to_cloud(user_id)
+    except Exception as e:
+        logger.warning(f"Failed to sync holdings to cloud after add_holding: {e}")
+
+    return result_payload
+
 
 @router.delete("/holdings/{scheme_code}", summary="Delete a fund holding from portfolio")
 def delete_holding(scheme_code: int, user: dict = Depends(get_current_user)):
     """
-    Remove a mutual fund holding from the user's portfolio.
+    Remove a mutual fund holding from the user's portfolio and sync deletion to Supabase Cloud.
     """
     user_id = user["user_id"]
     conn = _get_portfolio_db()
@@ -423,10 +446,80 @@ def delete_holding(scheme_code: int, user: dict = Depends(get_current_user)):
             evaluate_and_generate_alerts(user_id)
         except Exception:
             pass
-
-        return {"success": True, "message": f"Fund {scheme_code} removed from portfolio."}
     finally:
         conn.close()
+
+    # Cloud Persistence: Sync updated holdings list to Supabase Cloud
+    try:
+        from src.data.cloud_sync import sync_local_holdings_to_cloud
+        sync_local_holdings_to_cloud(user_id)
+    except Exception as e:
+        logger.warning(f"Failed to sync holdings to cloud after delete_holding: {e}")
+
+    return {"success": True, "message": f"Fund {scheme_code} removed from portfolio."}
+
+
+class BackupSyncPayload(BaseModel):
+    holdings: list[dict]
+
+
+@router.post("/sync-backup", summary="Restore portfolio holdings from client backup")
+def sync_backup(payload: BackupSyncPayload, user: dict = Depends(get_current_user)):
+    """
+    Allows client-side localStorage backup to restore portfolio holdings into
+    local SQLite and Supabase Cloud.
+    """
+    user_id = user["user_id"]
+    if not payload.holdings:
+        return {"success": True, "count": 0, "message": "No holdings provided"}
+
+    conn = _get_portfolio_db()
+    restored = 0
+    try:
+        for h in payload.holdings:
+            scheme_code = int(h.get("scheme_code") or 0)
+            if scheme_code <= 0:
+                continue
+            scheme_name = str(h.get("scheme_name") or "")
+            units = float(h.get("units") or 0.0)
+            avg_nav = float(h.get("avg_nav") or 0.0)
+            invested = float(h.get("invested_amount") or h.get("invested") or 0.0)
+            category = str(h.get("category") or "Equity")
+            folio = h.get("folio_number")
+            inv_type = str(h.get("investment_type") or "LUMPSUM")
+            inv_date = h.get("investment_date")
+
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO user_holdings (
+                    id, user_id, scheme_code, scheme_name, units, avg_nav,
+                    invested_amount, category, folio_number, investment_type, investment_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    str(h.get("id") or uuid.uuid4().hex),
+                    user_id, scheme_code, scheme_name, units, avg_nav,
+                    invested, category, folio, inv_type, inv_date
+                ),
+            )
+            restored += 1
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        from src.data.cloud_sync import sync_local_holdings_to_cloud
+        sync_local_holdings_to_cloud(user_id)
+    except Exception as e:
+        logger.warning(f"Failed to sync backup holdings to cloud: {e}")
+
+    try:
+        from src.api.routes.alerts import evaluate_and_generate_alerts
+        evaluate_and_generate_alerts(user_id)
+    except Exception:
+        pass
+
+    return {"success": True, "count": restored, "message": f"Successfully synced {restored} holdings."}
 
 
 @router.post("/xray", summary="Portfolio sector and thematic X-Ray")
