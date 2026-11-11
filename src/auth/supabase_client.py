@@ -334,14 +334,8 @@ def _supabase_get_user(token: str) -> Optional[dict]:
             u = res.json()
             return {"user_id": u.get("id"), "email": u.get("email")}
         elif res.status_code == 401:
-            err_msg = "Session expired. Please log in again."
-            try:
-                data = res.json()
-                if "msg" in data:
-                    err_msg = f"{data['msg']}. Please log in again."
-            except Exception:
-                pass
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=err_msg)
+            logger.warning("[Auth] Supabase /user verification returned 401: %s", res.text[:120])
+            return None
     except HTTPException:
         raise
     except Exception as e:
@@ -458,6 +452,72 @@ def sign_in(email: str, password: str) -> dict:
         }
     finally:
         conn.close()
+
+
+def refresh_session(refresh_token: str) -> dict:
+    """Refresh access token using a refresh token (Supabase cloud primary, local fallback)."""
+    if not refresh_token or not refresh_token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Refresh token is required.",
+        )
+
+    clean_token = refresh_token.strip()
+
+    # 1. Local token fallback
+    if clean_token.startswith("local."):
+        u = _verify_local_token(clean_token)
+        new_token = _generate_local_token(u["user_id"], u["email"])
+        return {
+            "access_token": new_token,
+            "refresh_token": new_token,
+            "token_type": "bearer",
+            "user_id": u["user_id"],
+            "email": u["email"],
+            "user": {"id": u["user_id"], "email": u["email"]},
+        }
+
+    # 2. Supabase Cloud refresh
+    url, pub_key, _ = _get_supabase_config()
+    if _is_supabase_configured():
+        try:
+            refresh_url = f"{url}/auth/v1/token?grant_type=refresh_token"
+            headers = {"apikey": pub_key, "Content-Type": "application/json"}
+            res = requests.post(
+                refresh_url,
+                json={"refresh_token": clean_token},
+                headers=headers,
+                timeout=10,
+            )
+            if res.status_code == 200:
+                data = res.json()
+                user_info = data.get("user", {})
+                user_id = user_info.get("id")
+                email = user_info.get("email")
+                access_token = data.get("access_token")
+                new_refresh_token = data.get("refresh_token", clean_token)
+                return {
+                    "access_token": access_token,
+                    "refresh_token": new_refresh_token,
+                    "token_type": "bearer",
+                    "user_id": user_id,
+                    "email": email,
+                    "user": {"id": user_id, "email": email},
+                }
+            elif res.status_code in (400, 401):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Refresh token expired or invalid. Please log in again.",
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.warning("[Auth] Supabase refresh error: %s", e)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Unable to refresh session. Please log in again.",
+    )
 
 
 def sign_out(access_token: str) -> None:

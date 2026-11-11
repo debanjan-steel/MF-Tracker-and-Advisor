@@ -85,6 +85,14 @@ assert res.status_code == 400, f"Signup should have been blocked: {res.status_co
 assert "Forgot password" in res.json()["detail"], "Blocked signup message does not direct to Forgot Password"
 print(f"✅ POST /auth/signup (duplicate email blocked) -> {res.json()['detail']}")
 
+# 10b. Token Refresh Endpoint
+from src.auth.supabase_client import _generate_local_token
+local_tok = _generate_local_token("test-user-123", "test@example.com")
+res = client.post("/auth/refresh", json={"refresh_token": local_tok})
+assert res.status_code == 200, f"Refresh failed: {res.status_code}"
+assert "access_token" in res.json(), "Access token missing in refresh response"
+print("✅ POST /auth/refresh -> Successfully verified & renewed session token")
+
 # 11. Initial Add Holding
 h_payload1 = {
     "scheme_code": 122640,

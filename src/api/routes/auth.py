@@ -17,6 +17,7 @@ from src.auth.supabase_client import (
     request_password_reset,
     change_password,
     check_user_exists,
+    refresh_session,
 )
 
 router = APIRouter()
@@ -30,6 +31,10 @@ class SignUpRequest(BaseModel):
 class SignInRequest(BaseModel):
     email: EmailStr
     password: str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -70,6 +75,12 @@ def signup(body: SignUpRequest):
 def login(body: SignInRequest):
     """Authenticate and receive a JWT access token."""
     return sign_in(body.email, body.password)
+
+
+@router.post("/refresh", summary="Refresh access token")
+def refresh(body: RefreshTokenRequest):
+    """Obtain a new access token using a valid refresh token."""
+    return refresh_session(body.refresh_token)
 
 
 @router.post("/logout", summary="Log out")

@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { useAuthStore } from '../store/authStore'
 
 const BASE = import.meta.env.VITE_API_URL || '/api'
 
@@ -7,35 +8,163 @@ export const api = axios.create({
   timeout: 30000,
 })
 
+// Helper to reliably retrieve token from localStorage or persisted auth store
+export const getAuthToken = (): string | null => {
+  let token = localStorage.getItem('access_token')
+  if (token && token !== 'undefined' && token !== 'null' && token.trim() !== '') {
+    return token.trim()
+  }
+  try {
+    const persisted = localStorage.getItem('mf-auth')
+    if (persisted) {
+      const parsed = JSON.parse(persisted)
+      if (parsed?.state?.token && parsed.state.token !== 'undefined' && parsed.state.token !== 'null') {
+        const fallback = String(parsed.state.token).trim()
+        localStorage.setItem('access_token', fallback)
+        return fallback
+      }
+    }
+  } catch {}
+  return null
+}
+
+export const getRefreshToken = (): string | null => {
+  let token = localStorage.getItem('refresh_token')
+  if (token && token !== 'undefined' && token !== 'null' && token.trim() !== '') {
+    return token.trim()
+  }
+  try {
+    const persisted = localStorage.getItem('mf-auth')
+    if (persisted) {
+      const parsed = JSON.parse(persisted)
+      if (parsed?.state?.refreshToken && parsed.state.refreshToken !== 'undefined' && parsed.state.refreshToken !== 'null') {
+        const fallback = String(parsed.state.refreshToken).trim()
+        localStorage.setItem('refresh_token', fallback)
+        return fallback
+      }
+    }
+  } catch {}
+  return null
+}
+
 // Inject auth token on every request safely
 api.interceptors.request.use((cfg) => {
-  const token = localStorage.getItem('access_token')
-  if (token && token !== 'undefined' && token !== 'null' && token.trim() !== '') {
-    cfg.headers.Authorization = `Bearer ${token.trim()}`
+  const token = getAuthToken()
+  if (token) {
+    cfg.headers.Authorization = `Bearer ${token}`
   } else {
     delete cfg.headers.Authorization
   }
   return cfg
 })
 
-// Auto-handle session expiration on 401
+let isRefreshing = false
+let failedQueue: Array<{
+  resolve: (token: string) => void
+  reject: (err: any) => void
+}> = []
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach((prom) => {
+    if (error) {
+      prom.reject(error)
+    } else if (token) {
+      prom.resolve(token)
+    }
+  })
+  failedQueue = []
+}
+
+// Auto-handle session expiration on 401 with silent auto-refresh
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
-    if (err.response?.status === 401) {
-      const detail = String(err.response?.data?.detail || '')
-      if (
-        detail.toLowerCase().includes('expired') ||
-        detail.toLowerCase().includes('log in') ||
-        detail.toLowerCase().includes('session') ||
-        detail.toLowerCase().includes('token')
-      ) {
-        localStorage.removeItem('access_token')
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('mf-auth-unauthorized'))
+  async (err) => {
+    const originalRequest = err.config
+    if (!originalRequest) {
+      return Promise.reject(err)
+    }
+
+    const url = String(originalRequest.url || '')
+
+    // 1. NEVER intercept or trigger auto-logout on /auth/ endpoints
+    if (
+      url.includes('/auth/login') ||
+      url.includes('/auth/signup') ||
+      url.includes('/auth/check-email') ||
+      url.includes('/auth/forgot-password') ||
+      url.includes('/auth/refresh')
+    ) {
+      return Promise.reject(err)
+    }
+
+    if (err.response?.status === 401 && !originalRequest._retry) {
+      // If the request had NO authorization header, do not treat as session expired
+      const authHeader =
+        originalRequest.headers?.Authorization ||
+        originalRequest.headers?.authorization
+      if (!authHeader) {
+        return Promise.reject(err)
+      }
+
+      const refreshToken = getRefreshToken()
+
+      if (refreshToken) {
+        if (isRefreshing) {
+          return new Promise<any>((resolve, reject) => {
+            failedQueue.push({
+              resolve: (newToken: string) => {
+                originalRequest.headers.Authorization = `Bearer ${newToken}`
+                resolve(api(originalRequest))
+              },
+              reject: (error: any) => reject(error),
+            })
+          })
+        }
+
+        originalRequest._retry = true
+        isRefreshing = true
+
+        try {
+          const res = await axios.post(`${BASE}/auth/refresh`, {
+            refresh_token: refreshToken,
+          })
+          const newAccessToken = res.data?.access_token
+          const newRefreshToken = res.data?.refresh_token || refreshToken
+
+          if (newAccessToken) {
+            localStorage.setItem('access_token', newAccessToken)
+            if (newRefreshToken) {
+              localStorage.setItem('refresh_token', newRefreshToken)
+            }
+            try {
+              useAuthStore.getState().setToken(newAccessToken, newRefreshToken)
+            } catch {}
+
+            processQueue(null, newAccessToken)
+            originalRequest.headers.Authorization = `Bearer ${newAccessToken}`
+            return api(originalRequest)
+          }
+        } catch (refreshErr) {
+          processQueue(refreshErr, null)
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('refresh_token')
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('mf-auth-unauthorized'))
+          }
+          return Promise.reject(refreshErr)
+        } finally {
+          isRefreshing = false
         }
       }
+
+      // No refresh token: clear and signal unauthorized
+      localStorage.removeItem('access_token')
+      localStorage.removeItem('refresh_token')
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('mf-auth-unauthorized'))
+      }
     }
+
     return Promise.reject(err)
   }
 )
@@ -48,6 +177,8 @@ export const authAPI = {
     api.post('/auth/signup', { email, password }),
   login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
+  refreshToken: (refreshToken: string) =>
+    axios.post(`${BASE}/auth/refresh`, { refresh_token: refreshToken }),
   logout: () => api.post('/auth/logout'),
   deleteAccount: () => api.delete('/auth/delete-account/confirm', { data: { confirm: true } }),
   forgotPassword: (email: string) =>

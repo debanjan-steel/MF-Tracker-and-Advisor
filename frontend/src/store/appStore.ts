@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { TacticalPlan, TimingScore, GoalPlan, SavedInvestmentPlanPayload, SavedGoalPlan } from '../types'
-import { userAPI, plannerAPI } from '../lib/api'
+import { userAPI, plannerAPI, getAuthToken } from '../lib/api'
 
 type Tab = 'planner' | 'portfolio' | 'explorer' | 'alerts' | 'settings'
 
@@ -357,8 +357,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   // ── Universal Cloud Sync ───────────────────────────────────────
   isSyncing: false,
   syncWithCloud: async () => {
-    const token = localStorage.getItem('access_token')
-    if (!token || token === 'undefined' || token === 'null' || !token.trim()) return
+    const token = getAuthToken()
+    if (!token) return
     set({ isSyncing: true })
     try {
       const res = await userAPI.getState()
