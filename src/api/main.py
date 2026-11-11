@@ -34,7 +34,7 @@ from fastapi.responses import JSONResponse
 from src.data.storage import init_db
 
 # Import all route modules
-from src.api.routes import auth, funds, analytics, planner, portfolio, alerts
+from src.api.routes import auth, funds, analytics, planner, portfolio, alerts, user
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,6 +104,7 @@ app.include_router(analytics.router, prefix="/analytics", tags=["Analytics"])
 app.include_router(planner.router,   prefix="/planner",   tags=["Planner"])
 app.include_router(portfolio.router, prefix="/portfolio", tags=["Portfolio"])
 app.include_router(alerts.router,    prefix="/alerts",    tags=["Alerts"])
+app.include_router(user.router,      prefix="/user",      tags=["User State & Sync"])
 
 
 # ─────────────────────────────────────────────────────────────────────────────

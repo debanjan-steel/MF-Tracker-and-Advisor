@@ -966,10 +966,18 @@ class SavePlanRequest(BaseModel):
 
 @router.get("/saved-plan", summary="Get user's saved investment plan")
 def get_saved_plan(user: dict = Depends(get_current_user)):
-    """Retrieve the user's previously saved investment plan if one exists."""
+    """Retrieve the user's previously saved investment plan, rehydrating from cloud if needed."""
     from src.data.storage import get_db
     import json
     user_id = user["user_id"]
+
+    # Rehydrate from Supabase Cloud if local container restarted
+    try:
+        from src.data.cloud_sync import ensure_user_plan_hydrated
+        ensure_user_plan_hydrated(user_id)
+    except Exception:
+        pass
+
     with get_db() as conn:
         row = conn.execute(
             "SELECT plan_data, capital, saved_at, updated_at FROM user_saved_plans WHERE user_id = ?",
@@ -995,7 +1003,7 @@ def get_saved_plan(user: dict = Depends(get_current_user)):
 
 @router.post("/saved-plan", summary="Save or overwrite user's investment plan")
 def save_investment_plan(body: SavePlanRequest, user: dict = Depends(get_current_user)):
-    """Save an investment plan, overwriting any previous saved plan for this user."""
+    """Save an investment plan to local SQLite and sync to Supabase Cloud."""
     from src.data.storage import get_db
     import json
     user_id = user["user_id"]
@@ -1013,19 +1021,33 @@ def save_investment_plan(body: SavePlanRequest, user: dict = Depends(get_current
             (user_id, serialized, body.capital),
         )
 
+    # Persist to Supabase Cloud
+    try:
+        from src.data.cloud_sync import save_user_plan_to_cloud
+        save_user_plan_to_cloud(user_id, body.plan_data, body.capital)
+    except Exception as e:
+        logger.warning(f"Failed to sync plan to cloud: {e}")
+
     return {
         "success": True,
-        "message": "Investment plan saved successfully. Overwrote any previous plan.",
+        "message": "Investment plan saved and synced to cloud successfully.",
     }
 
 
 @router.delete("/saved-plan", summary="Delete user's saved investment plan")
 def delete_saved_plan(user: dict = Depends(get_current_user)):
-    """Delete the saved investment plan."""
+    """Delete the saved investment plan from local DB and cloud."""
     from src.data.storage import get_db
     user_id = user["user_id"]
     with get_db() as conn:
         conn.execute("DELETE FROM user_saved_plans WHERE user_id = ?", (user_id,))
+
+    try:
+        from src.data.cloud_sync import delete_user_plan_from_cloud
+        delete_user_plan_from_cloud(user_id)
+    except Exception:
+        pass
+
     return {"success": True, "message": "Saved plan removed."}
 
 
@@ -1047,10 +1069,20 @@ class SaveGoalRequest(BaseModel):
 
 @router.get("/saved-goals", summary="Get all saved long-term goal investment plans")
 def get_saved_goals(user: dict = Depends(get_current_user)):
-    """Retrieve all long-term goal investment plans created by the user."""
+    """Retrieve all long-term goal investment plans, rehydrating from cloud if needed."""
     from src.data.storage import get_db
     import json
     user_id = user["user_id"]
+
+    # Rehydrate from Supabase Cloud if container restarted
+    try:
+        from src.data.cloud_sync import ensure_user_goals_hydrated
+        cloud_hydrated = ensure_user_goals_hydrated(user_id)
+        if cloud_hydrated:
+            return cloud_hydrated
+    except Exception:
+        pass
+
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -1090,7 +1122,7 @@ def get_saved_goals(user: dict = Depends(get_current_user)):
 
 @router.post("/saved-goals", summary="Save a new long-term goal investment plan (unlimited)")
 def save_goal_plan(body: SaveGoalRequest, user: dict = Depends(get_current_user)):
-    """Save a new long-term goal investment plan. Users can save as many long-term goals as they wish."""
+    """Save a new long-term goal investment plan and sync to Supabase Cloud."""
     from src.data.storage import get_db
     import json
     import uuid
@@ -1131,20 +1163,34 @@ def save_goal_plan(body: SaveGoalRequest, user: dict = Depends(get_current_user)
             ),
         )
 
+    # Persist all current user goals to Supabase Cloud
+    try:
+        from src.data.cloud_sync import sync_local_goals_to_cloud
+        sync_local_goals_to_cloud(user_id)
+    except Exception as e:
+        logger.warning(f"Failed to sync goals to cloud: {e}")
+
     return {
         "success": True,
-        "message": f"Long-term goal '{body.goal_name}' saved successfully.",
+        "message": f"Long-term goal '{body.goal_name}' saved and synced to cloud.",
         "id": goal_id,
     }
 
 
 @router.delete("/saved-goals/{goal_id}", summary="Delete a specific long-term goal investment plan")
 def delete_saved_goal(goal_id: str, user: dict = Depends(get_current_user)):
-    """Delete a single long-term goal investment plan."""
+    """Delete a single long-term goal investment plan and sync deletion to cloud."""
     from src.data.storage import get_db
     user_id = user["user_id"]
     with get_db() as conn:
         conn.execute("DELETE FROM user_saved_goals WHERE id = ? AND user_id = ?", (goal_id, user_id))
+
+    try:
+        from src.data.cloud_sync import sync_local_goals_to_cloud
+        sync_local_goals_to_cloud(user_id)
+    except Exception as e:
+        logger.warning(f"Failed to sync goal deletion to cloud: {e}")
+
     return {"success": True, "message": "Goal removed."}
 
 

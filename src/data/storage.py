@@ -168,6 +168,17 @@ CREATE TABLE IF NOT EXISTS user_saved_goals (
     updated_at          TEXT DEFAULT (datetime('now'))
 );
 
+-- User watchlist items (persisted locally and synced with cloud)
+CREATE TABLE IF NOT EXISTS user_watchlist (
+    user_id             TEXT NOT NULL,
+    scheme_code         INTEGER NOT NULL,
+    scheme_name         TEXT NOT NULL,
+    fund_house          TEXT,
+    scheme_category     TEXT,
+    added_at            TEXT DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, scheme_code)
+);
+
 -- Index for fast time-series queries
 CREATE INDEX IF NOT EXISTS idx_nav_scheme_date  ON nav_history(scheme_code, nav_date DESC);
 CREATE INDEX IF NOT EXISTS idx_macro_ticker_date ON macro_history(ticker, price_date DESC);
@@ -175,6 +186,7 @@ CREATE INDEX IF NOT EXISTS idx_prediction_status ON prediction_ledger(status, ta
 CREATE INDEX IF NOT EXISTS idx_user_holdings_user ON user_holdings(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_alerts_user ON user_alerts(user_id, is_dismissed, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_saved_goals ON user_saved_goals(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_watchlist ON user_watchlist(user_id, added_at DESC);
 """
 
 

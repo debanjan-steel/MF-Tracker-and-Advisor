@@ -21,7 +21,13 @@ const TAB_TITLES: Record<string, string> = {
 
 function App() {
   const { user } = useAuthStore()
-  const { activeTab } = useAppStore()
+  const { activeTab, syncWithCloud } = useAppStore()
+
+  React.useEffect(() => {
+    if (user) {
+      syncWithCloud()
+    }
+  }, [user?.id])
 
   if (!user) {
     return <AuthPage />

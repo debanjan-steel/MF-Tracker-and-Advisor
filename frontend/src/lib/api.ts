@@ -178,3 +178,19 @@ export const alertsAPI = {
   deleteAlert: (id: string) => api.delete(`/alerts/${id}`),
   clearAll: () => api.delete('/alerts'),
 }
+
+// ── User State & Universal Cloud Sync ────────────────────────────────
+export const userAPI = {
+  getState: () => api.get('/user/state'),
+  syncState: (data: {
+    holdings?: any[]
+    watchlist?: any[]
+    saved_goals?: any[]
+    saved_investment_plan?: any
+    alert_preferences?: any
+  }) => api.post('/user/sync', data),
+  getWatchlist: () => api.get('/user/watchlist'),
+  saveWatchlist: (watchlist: any[]) => api.post('/user/watchlist', { watchlist }),
+  getAlertPreferences: () => api.get('/user/alert-preferences'),
+  saveAlertPreferences: (prefs: any) => api.post('/user/alert-preferences', prefs),
+}

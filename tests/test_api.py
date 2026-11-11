@@ -15,6 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastapi.testclient import TestClient
 from src.api.main import app
+from src.data.storage import init_db
+
+init_db()
 
 client = TestClient(app)
 
@@ -206,6 +209,75 @@ assert sync_res.status_code == 200, f"POST /analytics/stress-test/sync-events fa
 sync_data = sync_res.json()
 assert sync_data.get("success") is True, "Sync events did not return success"
 print(f"✅ POST /analytics/stress-test/sync-events -> Macro engine successfully synchronized live modern crisis deck")
+
+# 20. Universal State Persistence & Automatic Schema Migration
+# Test syncing legacy data format (old field names, strings, bare integer watchlists)
+legacy_state = {
+    "holdings": [
+        {
+            "scheme_code": "122640",
+            "scheme_name": "Parag Parikh Flexi Cap Fund - Direct Plan",
+            "invested": "50000",
+            "units": "800.5",
+            "investment_type": "SIP",
+        }
+    ],
+    "watchlist": [122640, "118989"],
+    "saved_goals": [
+        {
+            "goal_name": "Retirement Corpus",
+            "target": "25000000",
+            "years": "15",
+            "required_monthly_sip": "42000",
+        }
+    ],
+    "saved_investment_plan": {
+        "capital": "250000",
+        "plan_data": {"tacticalPlan": {"capital": 250000, "posture": "GROWTH"}},
+    },
+    "alert_preferences": {
+        "entry_alert": 1,
+        "macro_alert": "true",
+    },
+}
+
+sync_state_res = client.post("/user/sync", json=legacy_state)
+assert sync_state_res.status_code == 200, f"POST /user/sync failed: {sync_state_res.status_code} {sync_state_res.text}"
+sync_res_body = sync_state_res.json()
+assert sync_res_body.get("success") is True, "Sync did not return success"
+print(f"✅ POST /user/sync (Legacy schema migration) -> Upgraded & synced: {sync_res_body.get('details')}")
+
+# Verify GET /user/state returns fully normalized types and values
+state_res = client.get("/user/state")
+assert state_res.status_code == 200, f"GET /user/state failed: {state_res.status_code} {state_res.text}"
+migrated_state = state_res.json()
+assert migrated_state["schema_version"] == 3, f"Expected schema_version 3, got {migrated_state.get('schema_version')}"
+
+# Verify holding migration: 'invested' migrated to 'invested_amount' as float, units as float
+migrated_holding = next((h for h in migrated_state["holdings"] if str(h["scheme_code"]) == "122640"), None)
+assert migrated_holding is not None, "Holding 122640 not found in migrated state"
+assert isinstance(migrated_holding["invested_amount"], float) and migrated_holding["invested_amount"] == 50000.0, "invested_amount not migrated properly"
+assert isinstance(migrated_holding["units"], float) and migrated_holding["units"] == 800.5, "units not migrated to float"
+assert migrated_holding["avg_nav"] > 0, "avg_nav not calculated"
+
+# Verify watchlist migration: integers migrated to objects
+assert len(migrated_state["watchlist"]) >= 2, "Watchlist items missing"
+assert all(isinstance(w["scheme_code"], int) and isinstance(w["scheme_name"], str) for w in migrated_state["watchlist"]), "Watchlist not normalized"
+
+# Verify goal migration: 'target' migrated to 'target_corpus' as float, years as int
+migrated_goal = migrated_state["saved_goals"][0]
+assert migrated_goal["target_corpus"] == 25000000.0, f"Expected 25000000.0 target_corpus, got {migrated_goal['target_corpus']}"
+assert migrated_goal["years"] == 15, f"Expected 15 years, got {migrated_goal['years']}"
+
+print(f"✅ GET /user/state -> Universal state verified across holdings, watchlist, goals, plans (Schema v{migrated_state['schema_version']})")
+
+# 21. Watchlist dedicated endpoint
+wl_post = client.post("/user/watchlist", json={"watchlist": [122640, {"scheme_code": 118989, "scheme_name": "Mirae Asset Large Cap"}]})
+assert wl_post.status_code == 200, f"POST /user/watchlist failed: {wl_post.text}"
+wl_get = client.get("/user/watchlist")
+assert wl_get.status_code == 200, f"GET /user/watchlist failed: {wl_get.text}"
+assert len(wl_get.json()["watchlist"]) == 2, "Watchlist length mismatch"
+print(f"✅ POST & GET /user/watchlist -> Dedicated watchlist sync verified ({len(wl_get.json()['watchlist'])} funds)")
 
 print("\n" + "=" * 60)
 print("✅ ALL FASTAPI BACKEND TESTS PASSED!")
