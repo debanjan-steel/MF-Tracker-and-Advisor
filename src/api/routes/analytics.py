@@ -440,8 +440,8 @@ def get_portfolio_growth_forecast(
     """
     from src.analytics.fund_forecaster import calculate_portfolio_forecast
 
-    holdings = body.holdings or []
-    if not holdings:
+    holdings = body.holdings
+    if holdings is None:
         # If frontend didn't pass holdings in payload, pull directly from user's portfolio
         try:
             from src.data.cloud_sync import ensure_user_holdings_hydrated
@@ -449,7 +449,7 @@ def get_portfolio_growth_forecast(
         except Exception:
             holdings = []
 
-    result = calculate_portfolio_forecast(holdings)
+    result = calculate_portfolio_forecast(holdings or [])
     return result
 
 
@@ -465,13 +465,29 @@ def recalibrate_forecast_algorithm(
     from src.analytics.fund_forecaster import calculate_portfolio_forecast
     from src.analytics.retrainer import retrain_weights
 
-    holdings = body.holdings or []
-    if not holdings:
+    holdings = body.holdings
+    if holdings is None:
         try:
             from src.data.cloud_sync import ensure_user_holdings_hydrated
             holdings = ensure_user_holdings_hydrated(user["user_id"])
         except Exception:
             holdings = []
+
+    if not holdings:
+        return {
+            "success": True,
+            "message": "Portfolio has 0 holdings. Add mutual funds to portfolio to start forecasting.",
+            "calibration": {
+                "engine_version": "v2.5-Adaptive-NormalFilter",
+                "normal_market_accuracy": 0.0,
+                "normal_cycles_evaluated": 0,
+                "outlier_shocks_excluded": 0,
+                "status": "AWAITING_PORTFOLIO",
+                "last_calibrated": "N/A",
+                "methodology": "Normal Market Trend Matching",
+                "explanation": "Add mutual funds to your portfolio to start forecasting.",
+            },
+        }
 
     forecast_data = calculate_portfolio_forecast(holdings)
     calib = forecast_data.get("calibration", {})

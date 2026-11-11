@@ -142,3 +142,4 @@ def save_alert_preferences(body: AlertPreferencesRequest, user: dict = Depends(g
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to save alert preferences: {str(e)}",
         )
+

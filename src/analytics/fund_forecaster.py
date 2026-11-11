@@ -243,16 +243,31 @@ def calculate_portfolio_forecast(holdings: List[Dict[str, Any]]) -> Dict[str, An
     The first view represents the Total Portfolio, and users can switch to any specific fund.
     """
     if not holdings:
-        # Default representative baseline if portfolio is empty
-        holdings = [{
-            "scheme_code": 122640,
-            "scheme_name": "Parag Parikh Flexi Cap Fund",
-            "units": 100.0,
-            "invested": 50000.0,
-            "current_value": 75000.0,
-            "current_nav": 75.0,
-            "category": "Equity",
-        }]
+        # Zero baseline when portfolio has 0 mutual funds
+        return {
+            "total_portfolio": {
+                "name": "Total Portfolio",
+                "total_invested": 0.0,
+                "current_value": 0.0,
+                "expected_cagr": 0.0,
+                "funds_count": 0,
+                "milestones": [],
+                "trajectory": [],
+            },
+            "funds": [],
+            "calibration": {
+                "engine_version": "v2.5-Adaptive-NormalFilter",
+                "normal_market_accuracy": 0.0,
+                "normal_cycles_evaluated": 0,
+                "outlier_shocks_excluded": 0,
+                "status": "AWAITING_PORTFOLIO",
+                "last_calibrated": datetime.utcnow().strftime("%d %b %Y, %H:%M UTC"),
+                "methodology": "Normal Market Trend Matching (Outlier Shock Filtering: |z-score| > 3.0 excluded)",
+                "explanation": "Add mutual funds to your portfolio to start forecasting future growth.",
+            },
+            "empty": True,
+            "message": "Add mutual funds to portfolio to start forecasting.",
+        }
 
     fund_forecasts = []
     total_invested = 0.0

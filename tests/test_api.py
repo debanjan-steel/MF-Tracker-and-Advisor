@@ -184,6 +184,15 @@ assert len(f_data["total_portfolio"]["milestones"]) == 6, f"Expected 6 milestone
 assert f_data["calibration"]["normal_market_accuracy"] > 70.0, "Expected normal market accuracy > 70%"
 print(f"✅ POST /analytics/portfolio-forecast -> Generated {len(f_data['total_portfolio']['milestones'])} milestones. Normal market match rate: {f_data['calibration']['normal_market_accuracy']}%")
 
+# 16b. Empty Portfolio Forecast Initial Zero State
+empty_forecast_res = client.post("/analytics/portfolio-forecast", json={"holdings": []})
+assert empty_forecast_res.status_code == 200, f"POST /analytics/portfolio-forecast (empty) failed: {empty_forecast_res.status_code}"
+empty_data = empty_forecast_res.json()
+assert empty_data.get("empty") is True or len(empty_data.get("funds", [])) == 0, "Empty portfolio forecast should have 0 funds"
+assert empty_data["total_portfolio"]["current_value"] == 0.0, "Empty portfolio current_value should be 0.0"
+assert "Add mutual fund" in empty_data.get("message", ""), "Empty forecast should advise adding mutual funds"
+print(f"✅ POST /analytics/portfolio-forecast (0 holdings) -> Correctly reset to 0 initial value with empty portfolio guidance")
+
 # 17. Forecast Recalibrate Engine Loop
 res = client.post("/analytics/forecast-recalibrate", json=forecast_payload)
 assert res.status_code == 200, f"POST /analytics/forecast-recalibrate failed: {res.status_code} {res.text}"
