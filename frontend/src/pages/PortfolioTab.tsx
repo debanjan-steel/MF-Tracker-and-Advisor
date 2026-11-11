@@ -8,7 +8,7 @@ import {
   Clock, Info, Sparkles
 } from 'lucide-react'
 import BlackSwanStressTester from '../components/BlackSwanStressTester'
-import MonteCarloFanChart from '../components/MonteCarloFanChart'
+import PortfolioFundForecaster from '../components/PortfolioFundForecaster'
 import { useAuthStore } from '../store/authStore'
 
 // ── Manual Add Fund types ──────────────────────────────────────────────
@@ -1119,13 +1119,8 @@ export default function PortfolioTab() {
         </>
       )}
 
-      {/* ── Probabilistic Monte Carlo Forecast for Portfolio ── */}
-      <MonteCarloFanChart
-        isPortfolio={true}
-        portfolioValue={totalValue > 0 ? totalValue : 500000}
-        holdings={holdings}
-        schemeName="Portfolio Growth & Uncertainty Distribution"
-      />
+      {/* ── Mutual Fund & Portfolio Future Forecaster ── */}
+      <PortfolioFundForecaster holdings={holdings} />
 
       {/* ── Macro Stress Tester & Black Swan Simulator ── */}
       <BlackSwanStressTester

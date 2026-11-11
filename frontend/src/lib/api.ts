@@ -89,6 +89,10 @@ export const analyticsAPI = {
     api.get(`/analytics/monte-carlo/${code}`, { params: { horizon_days: days, simulations } }),
   monteCarloPortfolio: (portfolio_value: number, days = 30, holdings?: any[]) =>
     api.post('/analytics/monte-carlo/portfolio', { portfolio_value, horizon_days: days, holdings }),
+  portfolioForecast: (holdings?: any[]) =>
+    api.post('/analytics/portfolio-forecast', { holdings }),
+  forecastRecalibrate: (holdings?: any[]) =>
+    api.post('/analytics/forecast-recalibrate', { holdings }),
   macroAnalogue: () => api.get('/analytics/macro-analogue/current'),
   thermometer: (code = 122640, category = 'Equity') =>
     api.get(`/analytics/thermometer/${code}`, { params: { category } }),

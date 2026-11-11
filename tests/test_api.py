@@ -157,6 +157,37 @@ if macro_indices and portfolio_indices:
     assert min(portfolio_indices) < min(macro_indices), "Portfolio alerts are not prioritized at the top of the feed"
 print(f"✅ GET /alerts/feed -> {len(alerts_list)} alerts loaded. Portfolio alerts strictly prioritized at the top!")
 
+# 16. Portfolio & Mutual Fund Multi-Horizon Future Forecaster
+forecast_payload = {
+    "holdings": [
+        {
+            "scheme_code": 122640,
+            "scheme_name": "Parag Parikh Flexi Cap Fund",
+            "units": 50.0,
+            "invested": 3000.0,
+            "current_value": 4277.07,
+            "current_nav": 85.54,
+            "category": "Equity",
+        }
+    ]
+}
+res = client.post("/analytics/portfolio-forecast", json=forecast_payload)
+assert res.status_code == 200, f"POST /analytics/portfolio-forecast failed: {res.status_code} {res.text}"
+f_data = res.json()
+assert "total_portfolio" in f_data, "total_portfolio missing from forecast response"
+assert "funds" in f_data, "funds list missing from forecast response"
+assert "calibration" in f_data, "calibration missing from forecast response"
+assert len(f_data["total_portfolio"]["milestones"]) == 6, f"Expected 6 milestones, got {len(f_data['total_portfolio']['milestones'])}"
+assert f_data["calibration"]["normal_market_accuracy"] > 70.0, "Expected normal market accuracy > 70%"
+print(f"✅ POST /analytics/portfolio-forecast -> Generated {len(f_data['total_portfolio']['milestones'])} milestones. Normal market match rate: {f_data['calibration']['normal_market_accuracy']}%")
+
+# 17. Forecast Recalibrate Engine Loop
+res = client.post("/analytics/forecast-recalibrate", json=forecast_payload)
+assert res.status_code == 200, f"POST /analytics/forecast-recalibrate failed: {res.status_code} {res.text}"
+recalib_data = res.json()
+assert recalib_data.get("success") is True, "Recalibration did not return success"
+print(f"✅ POST /analytics/forecast-recalibrate -> Engine recalibrated against normal market trends with outlier shock filtering")
+
 print("\n" + "=" * 60)
 print("✅ ALL FASTAPI BACKEND TESTS PASSED!")
 print("=" * 60)

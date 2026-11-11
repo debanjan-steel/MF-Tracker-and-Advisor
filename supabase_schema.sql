@@ -32,3 +32,4 @@ CREATE POLICY "Users can manage their own holdings"
 
 -- Index for high-speed queries
 CREATE INDEX IF NOT EXISTS idx_user_holdings_user ON public.user_holdings(user_id);
+
