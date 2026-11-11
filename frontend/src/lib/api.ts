@@ -75,6 +75,8 @@ export const analyticsAPI = {
   backtest: (code: number, monthly: number, years: number) =>
     api.get(`/analytics/backtest/${code}`, { params: { monthly_amount: monthly, years } }),
   stressScenarios: () => api.get('/analytics/stress-test/scenarios'),
+  stressSyncEvents: () => api.post('/analytics/stress-test/sync-events'),
+  stressAddEvent: (data: any) => api.post('/analytics/stress-test/add-event', data),
   stressTest: (scenario: string, portfolioValue = 500000) =>
     api.get(`/analytics/stress-test/${scenario}`, { params: { portfolio_value: portfolioValue } }),
   stressSimulate: (data: {

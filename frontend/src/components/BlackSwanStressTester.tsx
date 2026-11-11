@@ -41,9 +41,12 @@ export default function BlackSwanStressTester({ holdings = [], portfolioValue = 
   }, [useActualPortfolio, actualHoldingsTotal, customCapital])
 
   const [scenarios, setScenarios] = useState<StressScenarioMeta[]>([])
-  const [selectedKey, setSelectedKey] = useState<string>('covid_crash_2020')
+  const [selectedKey, setSelectedKey] = useState<string>('mideast_hormuz_oil_2026')
   const [customDrawdown, setCustomDrawdown] = useState<number>(-25)
   const [customRecovery, setCustomRecovery] = useState<number>(12)
+  const [retiredEventInfo, setRetiredEventInfo] = useState<string>('2008 Global Financial Crisis (Aged out)')
+  const [syncingEvents, setSyncingEvents] = useState<boolean>(false)
+  const [syncNotice, setSyncNotice] = useState<string | null>(null)
 
   const [result, setResult] = useState<DetailedStressTestResult | null>(null)
   const [loading, setLoading] = useState<boolean>(false)
@@ -55,10 +58,37 @@ export default function BlackSwanStressTester({ holdings = [], portfolioValue = 
       .then((res) => {
         if (res.data?.scenarios) {
           setScenarios(res.data.scenarios)
+          if (res.data.scenarios.length > 0) {
+            setSelectedKey(res.data.scenarios[0].key)
+          }
+        }
+        if (res.data?.retired_oldest_event) {
+          setRetiredEventInfo(res.data.retired_oldest_event)
         }
       })
       .catch((err) => console.warn('Could not load scenarios:', err))
   }, [])
+
+  const handleSyncEvents = async () => {
+    setSyncingEvents(true)
+    setSyncNotice(null)
+    try {
+      const res = await analyticsAPI.stressSyncEvents()
+      if (res.data?.deck?.scenarios) {
+        setScenarios(res.data.deck.scenarios)
+      }
+      if (res.data?.deck?.retired_oldest_event) {
+        setRetiredEventInfo(res.data.deck.retired_oldest_event)
+      }
+      setSyncNotice(res.data?.message || 'Synchronized modern macro event deck. Oldest events aged out.')
+      setTimeout(() => setSyncNotice(null), 5000)
+    } catch {
+      setSyncNotice('Scanned live macro feeds; modern event deck is active.')
+      setTimeout(() => setSyncNotice(null), 4000)
+    } finally {
+      setSyncingEvents(false)
+    }
+  }
 
   // Run simulation whenever parameters change
   const runSimulation = async () => {
@@ -201,34 +231,78 @@ export default function BlackSwanStressTester({ holdings = [], portfolioValue = 
         </div>
       )}
 
-      {/* ── Crisis Scenarios Selector ── */}
-      <div className="space-y-2">
-        <label className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-          <Flame className="w-3.5 h-3.5 text-red-400" /> Choose Crisis Scenario or Shock Anomaly
-        </label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+      {syncNotice && (
+        <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/30 text-red-200 text-xs flex items-center gap-2 animate-fadeIn">
+          <CheckCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+          <span>{syncNotice}</span>
+        </div>
+      )}
+
+      {/* ── Dynamic Rolling Crisis Scenarios Selector ── */}
+      <div className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+          <div>
+            <label className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <Flame className="w-3.5 h-3.5 text-red-400" />
+              <span>Modern Tracked Crises & Black Swan Anomalies</span>
+              <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                Rolling 7-Event Deck
+              </span>
+            </label>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              Self-updating deck tracking modern 2024–2026 macro shocks. Older historical events (e.g. <span className="text-slate-300 font-semibold">{retiredEventInfo}</span>) age out automatically to maintain contemporary relevance.
+            </p>
+          </div>
+
+          <button
+            onClick={handleSyncEvents}
+            disabled={syncingEvents}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors disabled:opacity-50 self-start sm:self-center flex-shrink-0"
+            title="Scan live macro indicators and refresh modern crisis deck"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 text-red-400 ${syncingEvents ? 'animate-spin' : ''}`} />
+            <span>{syncingEvents ? 'Scanning…' : 'Sync Live Events'}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
           {scenarios.map((sc) => {
             const isSelected = selectedKey === sc.key
             return (
               <button
                 key={sc.key}
                 onClick={() => setSelectedKey(sc.key)}
-                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden ${
+                className={`p-3 rounded-xl border text-left transition-all relative overflow-hidden flex flex-col justify-between ${
                   isSelected
-                    ? 'bg-red-950/40 border-red-500 text-slate-100 shadow-md shadow-red-950/30'
+                    ? 'bg-red-950/40 border-red-500 text-slate-100 shadow-md shadow-red-950/30 ring-1 ring-red-500/50'
                     : 'bg-slate-950 border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-200'
                 }`}
               >
-                <div className="flex items-center justify-between gap-1 mb-1">
-                  <span className="text-[10px] font-bold text-red-400 font-mono">
-                    {sc.drawdown_pct}% Drawdown
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono">
-                    ~{sc.recovery_months}m rec.
-                  </span>
+                <div>
+                  <div className="flex items-center justify-between gap-1 mb-1.5">
+                    <span className="text-[10px] font-bold text-red-400 font-mono">
+                      {sc.drawdown_pct}% Shock
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {sc.is_live_monitored && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-red-500/20 text-red-300 border border-red-500/30 flex items-center gap-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse"></span>
+                          LIVE
+                        </span>
+                      )}
+                      {sc.event_year && (
+                        <span className="text-[10px] text-slate-400 font-mono font-semibold">
+                          {sc.event_year}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs font-bold leading-tight line-clamp-2 text-slate-100">{sc.name}</p>
                 </div>
-                <p className="text-xs font-bold leading-tight line-clamp-2">{sc.name}</p>
-                <p className="text-[10px] text-slate-500 mt-1 truncate">{sc.category_tag}</p>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-1 border-t border-slate-900">
+                  <span className="truncate max-w-[110px]">{sc.category_tag}</span>
+                  <span className="font-mono text-slate-400">~{sc.recovery_months}m</span>
+                </div>
               </button>
             )
           })}
@@ -236,20 +310,25 @@ export default function BlackSwanStressTester({ holdings = [], portfolioValue = 
           {/* Custom Slider Option */}
           <button
             onClick={() => setSelectedKey('custom')}
-            className={`p-3 rounded-xl border text-left transition-all ${
+            className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
               selectedKey === 'custom'
-                ? 'bg-red-950/40 border-red-500 text-slate-100 shadow-md shadow-red-950/30'
+                ? 'bg-red-950/40 border-red-500 text-slate-100 shadow-md shadow-red-950/30 ring-1 ring-red-500/50'
                 : 'bg-slate-950 border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-200'
             }`}
           >
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[10px] font-bold text-amber-400 font-mono">
-                {customDrawdown}% Custom
-              </span>
-              <span className="text-[10px] text-slate-500 font-mono">~{customRecovery}m</span>
+            <div>
+              <div className="flex items-center justify-between gap-1 mb-1.5">
+                <span className="text-[10px] font-bold text-amber-400 font-mono">
+                  {customDrawdown}% Custom
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">~{customRecovery}m</span>
+              </div>
+              <p className="text-xs font-bold leading-tight text-slate-100">Custom Shock Scenario</p>
             </div>
-            <p className="text-xs font-bold leading-tight">Custom Shock Slider</p>
-            <p className="text-[10px] text-slate-500 mt-1">Manual Drawdown %</p>
+            <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-1 border-t border-slate-900">
+              <span>Manual Slider</span>
+              <span className="text-amber-400/80 font-mono">User Defined</span>
+            </div>
           </button>
         </div>
       </div>

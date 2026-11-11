@@ -340,11 +340,14 @@ export interface DetailedStressTestResult {
 export interface StressScenarioMeta {
   key: string
   name: string
+  event_year?: number
   drawdown_pct: number
   recovery_months: number
   category_tag: string
   description: string
   category_impacts: Record<string, number>
+  is_live_monitored?: boolean
+  status?: string
 }
 
 // ── Historical Macro Analogue & Hedging Types ────────────────

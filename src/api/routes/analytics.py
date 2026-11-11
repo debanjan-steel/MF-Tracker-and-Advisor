@@ -216,23 +216,46 @@ class StressTestSimulateRequest(BaseModel):
     custom_macro_inputs: Optional[dict] = None
 
 
-@router.get("/stress-test/scenarios", summary="List available stress test scenarios")
+@router.get("/stress-test/scenarios", summary="List available dynamic stress test scenarios")
 def stress_scenarios(user: dict = Depends(get_current_user)):
-    """List all built-in stress test scenarios with complete risk parameters."""
-    return {
-        "scenarios": [
-            {
-                "key": k,
-                "name": v["name"],
-                "drawdown_pct": v["peak_to_trough_pct"],
-                "recovery_months": v.get("recovery_months", 6),
-                "category_tag": v.get("category_tag", "Macro Anomaly"),
-                "description": v.get("description", ""),
-                "category_impacts": v.get("category_impacts", {}),
-            }
-            for k, v in BUILT_IN_SCENARIOS.items()
-        ]
-    }
+    """
+    List currently active modern tracked macro scenarios from the self-updating rolling window.
+    Maintains active modern events and retires oldest events as new crises emerge.
+    """
+    from src.analytics.stress_tester import get_active_stress_scenarios
+    return get_active_stress_scenarios()
+
+
+@router.post("/stress-test/sync-events", summary="Synchronize and self-update modern tracked macro events")
+def sync_stress_events(user: dict = Depends(get_current_user)):
+    """
+    Self-Updating Engine: Checks live macro signals and syncs active modern events.
+    Automatically maintains rolling modern events queue and retires the oldest historical event.
+    """
+    from src.analytics.stress_tester import sync_dynamic_macro_events
+    return sync_dynamic_macro_events()
+
+
+class NewMacroEventPayload(BaseModel):
+    key: Optional[str] = None
+    name: str
+    event_year: Optional[int] = None
+    peak_to_trough_pct: float
+    duration_days: int = 60
+    recovery_months: int = 6
+    category_tag: str = "Modern Macro Anomaly"
+    description: str
+    category_impacts: Optional[dict] = None
+
+
+@router.post("/stress-test/add-event", summary="Track new modern macro event (retires oldest event)")
+def add_new_stress_event(body: NewMacroEventPayload, user: dict = Depends(get_current_user)):
+    """
+    Register a new modern macro event into the rolling simulator queue.
+    Automatically removes the oldest active event if active count exceeds threshold.
+    """
+    from src.analytics.stress_tester import add_or_update_macro_event
+    return add_or_update_macro_event(body.model_dump())
 
 
 @router.post("/stress-test/simulate", summary="Run interactive stress test on portfolio")

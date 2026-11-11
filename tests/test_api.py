@@ -188,6 +188,25 @@ recalib_data = res.json()
 assert recalib_data.get("success") is True, "Recalibration did not return success"
 print(f"✅ POST /analytics/forecast-recalibrate -> Engine recalibrated against normal market trends with outlier shock filtering")
 
+# 18. Dynamic Black Swan Simulator & Rolling Macro Event Deck
+res = client.get("/analytics/stress-test/scenarios")
+assert res.status_code == 200, f"GET /analytics/stress-test/scenarios failed: {res.status_code}"
+sc_deck = res.json()
+assert "scenarios" in sc_deck, "scenarios key missing from stress test response"
+assert "retired_oldest_event" in sc_deck, "retired_oldest_event metadata missing"
+assert len(sc_deck["scenarios"]) <= 7, f"Active scenarios exceed max threshold of 7: {len(sc_deck['scenarios'])}"
+# Verify modern event is active
+has_modern_event = any(s.get("event_year", 0) >= 2025 for s in sc_deck["scenarios"])
+assert has_modern_event, "No modern 2025-2026 macro events found in active deck"
+print(f"✅ GET /analytics/stress-test/scenarios -> {len(sc_deck['scenarios'])} modern tracked events active. Oldest retired: {sc_deck['retired_oldest_event']}")
+
+# 19. Dynamic Event Self-Update & Oldest Retirement
+sync_res = client.post("/analytics/stress-test/sync-events")
+assert sync_res.status_code == 200, f"POST /analytics/stress-test/sync-events failed: {sync_res.status_code}"
+sync_data = sync_res.json()
+assert sync_data.get("success") is True, "Sync events did not return success"
+print(f"✅ POST /analytics/stress-test/sync-events -> Macro engine successfully synchronized live modern crisis deck")
+
 print("\n" + "=" * 60)
 print("✅ ALL FASTAPI BACKEND TESTS PASSED!")
 print("=" * 60)

@@ -379,3 +379,4 @@ def calculate_portfolio_forecast(holdings: List[Dict[str, Any]]) -> Dict[str, An
         "funds": fund_forecasts,
         "calibration": calibration_report,
     }
+
