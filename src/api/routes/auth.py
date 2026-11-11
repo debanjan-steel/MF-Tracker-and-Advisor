@@ -16,6 +16,7 @@ from src.auth.supabase_client import (
     get_current_user,
     request_password_reset,
     change_password,
+    check_user_exists,
 )
 
 router = APIRouter()
@@ -38,6 +39,25 @@ class ForgotPasswordRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
+
+
+@router.get("/check-email", summary="Check if email already exists")
+def check_email_route(email: EmailStr):
+    """
+    Check if an email is already registered across Supabase and local DB.
+    Returns exists: True/False and a helpful user guidance message.
+    """
+    clean_email = str(email).lower().strip()
+    exists = check_user_exists(clean_email)
+    return {
+        "email": clean_email,
+        "exists": exists,
+        "message": (
+            "An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password."
+            if exists
+            else "Email is available for registration."
+        ),
+    }
 
 
 @router.post("/signup", summary="Create a new account")

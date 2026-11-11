@@ -7,15 +7,43 @@ export const api = axios.create({
   timeout: 30000,
 })
 
-// Inject auth token on every request
+// Inject auth token on every request safely
 api.interceptors.request.use((cfg) => {
   const token = localStorage.getItem('access_token')
-  if (token) cfg.headers.Authorization = `Bearer ${token}`
+  if (token && token !== 'undefined' && token !== 'null' && token.trim() !== '') {
+    cfg.headers.Authorization = `Bearer ${token.trim()}`
+  } else {
+    delete cfg.headers.Authorization
+  }
   return cfg
 })
 
+// Auto-handle session expiration on 401
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    if (err.response?.status === 401) {
+      const detail = String(err.response?.data?.detail || '')
+      if (
+        detail.toLowerCase().includes('expired') ||
+        detail.toLowerCase().includes('log in') ||
+        detail.toLowerCase().includes('session') ||
+        detail.toLowerCase().includes('token')
+      ) {
+        localStorage.removeItem('access_token')
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('mf-auth-unauthorized'))
+        }
+      }
+    }
+    return Promise.reject(err)
+  }
+)
+
 // ── Auth ────────────────────────────────────────────────────────────
 export const authAPI = {
+  checkEmail: (email: string) =>
+    api.get('/auth/check-email', { params: { email } }),
   signup: (email: string, password: string) =>
     api.post('/auth/signup', { email, password }),
   login: (email: string, password: string) =>
@@ -94,10 +122,13 @@ export const plannerAPI = {
     api.get('/planner/sip-recommendation', { params: { monthly_amount: monthly, scheme_code: code } }),
   taxPack: (lots: any[] = [], redemptions: any[] = []) =>
     api.post('/planner/tax-pack', {
+      purchase_lots: lots,
       lots,
       redemptions,
       financial_year: '2026-27',
     }),
+  taxPackCSV: () =>
+    api.get('/planner/tax-pack?format=csv', { responseType: 'blob' }),
   valueAveraging: (code: number, targetGrowth: number, currentVal: number, baseSip: number) =>
     api.get(`/planner/value-averaging/${code}`, {
       params: {

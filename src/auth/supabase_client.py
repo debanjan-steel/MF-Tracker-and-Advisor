@@ -38,15 +38,24 @@ LOCAL_AUTH_SECRET = os.getenv("AUTH_SECRET_KEY", "mf-tracker-local-dev-secret-ke
 
 
 def _get_supabase_config() -> tuple[str, str, str]:
-    """Retrieve Supabase URL, publishable key, and secret key from environment."""
-    url = (os.getenv("SUPABASE_URL") or "").strip().rstrip("/")
+    """Retrieve Supabase URL, publishable key, and secret key from config/environment."""
+    settings = get_settings()
+    url = (
+        getattr(settings, "supabase_url", None)
+        or os.getenv("SUPABASE_URL")
+        or ""
+    ).strip().rstrip("/")
     pub_key = (
-        os.getenv("SUPABASE_PUBLISHABLE_KEY")
+        getattr(settings, "supabase_publishable_key", None)
+        or getattr(settings, "supabase_anon_key", None)
+        or os.getenv("SUPABASE_PUBLISHABLE_KEY")
         or os.getenv("SUPABASE_ANON_KEY")
         or ""
     ).strip()
     sec_key = (
-        os.getenv("SUPABASE_SECRET_KEY")
+        getattr(settings, "supabase_secret_key", None)
+        or getattr(settings, "supabase_service_role_key", None)
+        or os.getenv("SUPABASE_SECRET_KEY")
         or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         or ""
     ).strip()
@@ -57,6 +66,44 @@ def _is_supabase_configured() -> bool:
     """Check if Supabase credentials are configured."""
     url, pub_key, _ = _get_supabase_config()
     return bool(url and pub_key and not url.startswith("your-") and not pub_key.startswith("your-"))
+
+
+def check_user_exists(email: str) -> bool:
+    """
+    Check if a user with this email already exists across Supabase and local SQLite.
+    Returns True if an account is already registered with this email, False otherwise.
+    """
+    clean_email = (email or "").lower().strip()
+    if not clean_email:
+        return False
+
+    # 1. Check local SQLite DB
+    conn = _get_db()
+    try:
+        cur = conn.execute("SELECT 1 FROM local_users WHERE LOWER(email) = ?", (clean_email,))
+        if cur.fetchone():
+            return True
+    except Exception as e:
+        logger.warning("[Auth] check_user_exists local DB lookup error: %s", e)
+    finally:
+        conn.close()
+
+    # 2. Check Supabase (if configured)
+    if _is_supabase_configured():
+        url, _, sec_key = _get_supabase_config()
+        if sec_key:
+            try:
+                admin_url = f"{url}/auth/v1/admin/users"
+                headers = {"apikey": sec_key, "Authorization": f"Bearer {sec_key}"}
+                res = requests.get(admin_url, headers=headers, params={"filter": clean_email}, timeout=5)
+                if res.status_code == 200:
+                    users = res.json().get("users", [])
+                    if any(u.get("email", "").lower() == clean_email for u in users):
+                        return True
+            except Exception as e:
+                logger.warning("[Auth] check_user_exists Supabase lookup error: %s", e)
+
+    return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -141,6 +188,8 @@ def _supabase_signup(email: str, password: str) -> Optional[dict]:
     if not url or not pub_key:
         return None
 
+    clean_email = email.lower().strip()
+
     # If secret key available, create auto-confirmed user so login works instantly
     if sec_key:
         try:
@@ -152,7 +201,7 @@ def _supabase_signup(email: str, password: str) -> Optional[dict]:
             }
             res = requests.post(
                 admin_url,
-                json={"email": email, "password": password, "email_confirm": True},
+                json={"email": clean_email, "password": password, "email_confirm": True},
                 headers=headers,
                 timeout=10,
             )
@@ -160,23 +209,28 @@ def _supabase_signup(email: str, password: str) -> Optional[dict]:
                 data = res.json()
                 user_id = data.get("id")
                 # Immediately log in to obtain session tokens
-                login_res = _supabase_signin(email, password)
+                login_res = _supabase_signin(clean_email, password)
                 if login_res:
                     return login_res
-                token = _generate_local_token(user_id, email)
+                token = _generate_local_token(user_id, clean_email)
                 return {
                     "user_id": user_id,
-                    "email": email,
+                    "email": clean_email,
                     "access_token": token,
                     "refresh_token": token,
                     "token_type": "bearer",
-                    "user": {"id": user_id, "email": email},
+                    "user": {"id": user_id, "email": clean_email},
                     "message": "Account created successfully.",
                 }
-            elif res.status_code == 422 or "already registered" in res.text.lower():
+            elif (
+                res.status_code in (400, 422)
+                or "already registered" in res.text.lower()
+                or "already exists" in res.text.lower()
+                or "email_exists" in res.text.lower()
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="An account with this email already exists. Please log in.",
+                    detail="An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password.",
                 )
         except HTTPException:
             raise
@@ -187,21 +241,39 @@ def _supabase_signup(email: str, password: str) -> Optional[dict]:
     try:
         signup_url = f"{url}/auth/v1/signup"
         headers = {"apikey": pub_key, "Content-Type": "application/json"}
-        res = requests.post(signup_url, json={"email": email, "password": password}, headers=headers, timeout=10)
+        res = requests.post(signup_url, json={"email": clean_email, "password": password}, headers=headers, timeout=10)
         if res.status_code in (200, 201):
             data = res.json()
+            # If GoTrue returns identities: [], the user is already registered!
+            if isinstance(data.get("identities"), list) and len(data.get("identities")) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password.",
+                )
             user_id = data.get("id")
             session = data.get("session")
-            token = session.get("access_token") if session else _generate_local_token(user_id, email)
+            token = session.get("access_token") if session else _generate_local_token(user_id, clean_email)
             return {
                 "user_id": user_id,
-                "email": email,
+                "email": clean_email,
                 "access_token": token,
                 "refresh_token": token,
                 "token_type": "bearer",
-                "user": {"id": user_id, "email": email},
+                "user": {"id": user_id, "email": clean_email},
                 "message": "Account created successfully.",
             }
+        elif (
+            res.status_code in (400, 422)
+            or "already" in res.text.lower()
+            or "exists" in res.text.lower()
+            or "registered" in res.text.lower()
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password.",
+            )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning("[Auth] Supabase standard signup failed: %s", e)
 
@@ -257,12 +329,23 @@ def _supabase_get_user(token: str) -> Optional[dict]:
 
     try:
         headers = {"apikey": pub_key, "Authorization": f"Bearer {token}"}
-        res = requests.get(f"{url}/auth/v1/user", headers=headers, timeout=5)
+        res = requests.get(f"{url}/auth/v1/user", headers=headers, timeout=6)
         if res.status_code == 200:
             u = res.json()
             return {"user_id": u.get("id"), "email": u.get("email")}
-    except Exception:
-        pass
+        elif res.status_code == 401:
+            err_msg = "Session expired. Please log in again."
+            try:
+                data = res.json()
+                if "msg" in data:
+                    err_msg = f"{data['msg']}. Please log in again."
+            except Exception:
+                pass
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=err_msg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[Auth] Supabase /user verification network warning: %s", e)
     return None
 
 
@@ -286,47 +369,55 @@ def _supabase_delete_user(user_id: str) -> bool:
 
 def sign_up(email: str, password: str) -> dict:
     """Register a new user (Supabase primary, SQLite fallback)."""
+    clean_email = email.lower().strip()
     if len(password) < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Password must be at least 6 characters long.",
         )
 
-    # 1. Try Supabase
+    # 1. Primary Failsafe Check: Prevent duplicate accounts
+    if check_user_exists(clean_email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password.",
+        )
+
+    # 2. Try Supabase
     if _is_supabase_configured():
-        res = _supabase_signup(email, password)
+        res = _supabase_signup(clean_email, password)
         if res:
-            logger.info("[Auth] User registered via Supabase: %s", email)
+            logger.info("[Auth] User registered via Supabase: %s", clean_email)
             return res
 
-    # 2. Local Fallback
+    # 3. Local Fallback
     conn = _get_db()
     try:
         user_id = str(uuid.uuid4())
         pwd_hash, salt = _hash_password(password)
         conn.execute(
             "INSERT INTO local_users (id, email, salt, password_hash) VALUES (?, ?, ?, ?)",
-            (user_id, email.lower().strip(), salt, pwd_hash),
+            (user_id, clean_email, salt, pwd_hash),
         )
         conn.commit()
     except sqlite3.IntegrityError:
         conn.close()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="An account with this email already exists. Please log in instead.",
+            detail="An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password.",
         )
     finally:
         conn.close()
 
-    token = _generate_local_token(user_id, email.lower().strip())
-    logger.info("[Auth] Local user registered: %s (id: %s)", email, user_id)
+    token = _generate_local_token(user_id, clean_email)
+    logger.info("[Auth] Local user registered: %s (id: %s)", clean_email, user_id)
     return {
         "user_id": user_id,
-        "email": email.lower().strip(),
+        "email": clean_email,
         "access_token": token,
         "refresh_token": token,
         "token_type": "bearer",
-        "user": {"id": user_id, "email": email.lower().strip()},
+        "user": {"id": user_id, "email": clean_email},
         "message": "Account created successfully.",
     }
 
@@ -505,22 +596,71 @@ def request_password_reset(email: str) -> dict:
 
 def validate_token(token: str) -> dict:
     """Validate Bearer token."""
-    if not token:
-        raise HTTPException(status_code=401, detail="Token missing.")
+    if not token or not token.strip():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication token missing. Please log in.",
+        )
 
-    if token in ("test-user-token", "test-token"):
+    clean_token = token.strip()
+    if clean_token in ("undefined", "null"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication session invalid. Please log in.",
+        )
+
+    if clean_token in ("test-user-token", "test-token"):
         return {"user_id": "test-user-123", "email": "test@example.com"}
 
-    if token.startswith("local."):
-        return _verify_local_token(token)
+    # 1. Local signed token check
+    if clean_token.startswith("local."):
+        return _verify_local_token(clean_token)
 
-    # Validate Supabase token
-    user = _supabase_get_user(token)
+    # 2. Standard JWT token check (e.g. Supabase Auth)
+    parts = clean_token.split(".")
+    if len(parts) != 3:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authorization token format. Please log in again.",
+        )
+
+    # Decode claims and check expiration client-side
+    user_id = None
+    email = None
+    try:
+        import jwt
+        unverified_payload = jwt.decode(clean_token, options={"verify_signature": False})
+        exp = unverified_payload.get("exp")
+        if exp and exp < time.time():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session expired. Please log in again.",
+            )
+        user_id = unverified_payload.get("sub") or unverified_payload.get("user_id")
+        email = unverified_payload.get("email")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning("[Auth] JWT decode failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Malformed authorization token. Please log in again.",
+        )
+
+    # Verify against live Supabase REST endpoint
+    user = _supabase_get_user(clean_token)
     if user:
         return user
 
-    # Fallback to local
-    return _verify_local_token(token)
+    # Resilient fallback: If Supabase network had transient timeout but token is unexpired with valid claims
+    if user_id and email:
+        logger.info("[Auth] Supabase check unavailable, using unexpired token claims for user %s", email)
+        return {"user_id": user_id, "email": email}
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Session invalid or expired. Please log in again.",
+    )
 
 
 _bearer = HTTPBearer(auto_error=False)

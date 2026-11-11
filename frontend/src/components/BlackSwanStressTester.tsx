@@ -404,3 +404,4 @@ export default function BlackSwanStressTester({ holdings = [], portfolioValue = 
     </div>
   )
 }
+

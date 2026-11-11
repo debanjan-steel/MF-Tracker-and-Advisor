@@ -42,9 +42,9 @@ const emptyForm = (): ManualForm => ({
   fundQuery: '',
   selectedFund: null,
   investedAmount: '',
-  investmentDate: new Date().toISOString().split('T')[0],
+  investmentDate: '',
   investmentType: 'LUMPSUM',
-  entryMode: 'date',
+  entryMode: 'current_value',
   currentValue: '',
   units: '',
 })
@@ -62,6 +62,8 @@ export default function PortfolioTab() {
   const [casError, setCasError] = useState<string | null>(null)
   const [showTax, setShowTax] = useState(false)
   const [refreshingNavs, setRefreshingNavs] = useState(false)
+  const [taxLoading, setTaxLoading] = useState(false)
+  const [taxError, setTaxError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   // ── Delete Confirmation state ───────────────────────────────────────
@@ -106,17 +108,36 @@ export default function PortfolioTab() {
   }
 
   const loadTax = async () => {
+    setTaxLoading(true)
+    setTaxError(null)
     try {
       const { data } = await plannerAPI.taxPack()
       setTaxData(data)
       setShowTax(true)
-    } catch { /* ignore */ }
+    } catch (err: any) {
+      setTaxError(err.response?.data?.detail || err.message || 'Failed to generate tax pack.')
+    } finally {
+      setTaxLoading(false)
+    }
+  }
+
+  const handleDownloadCSV = () => {
+    if (!taxData?.csv_download) return
+    const blob = new Blob([taxData.csv_download], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `ITR_Tax_Pack_${taxData.financial_year || 'FY'}.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
   }
 
   useEffect(() => { loadHoldings() }, [])
 
   // ── Calculate CAGR Helper ──────────────────────────────────────────
-  const calcCAGR = (invested: number, currentVal: number, dateStr: string): number | null => {
+  const calcCAGR = (invested: number, currentVal: number, dateStr?: string | null): number | null => {
     if (!dateStr || invested <= 0 || currentVal <= 0) return null
     const diffYears = (Date.now() - new Date(dateStr).getTime()) / (365.25 * 24 * 3600 * 1000)
     if (diffYears < 0.25) return null
@@ -139,20 +160,24 @@ export default function PortfolioTab() {
     const schemeCode = form.selectedFund.scheme_code
 
     try {
-      if (form.entryMode === 'date') {
-        const { data } = await fundsAPI.navOnDate(schemeCode, form.investmentDate)
-        const histNav = Number(data.nav) || 10
-        const latestNav = Number(data.latest_nav) || histNav
-        const units = invested / histNav
-        const currentVal = units * latestNav
+      if (form.entryMode === 'current_value') {
+        const currentVal = parseFloat(form.currentValue)
+        if (!currentVal || currentVal <= 0) {
+          setPreviewCalc(null)
+          return
+        }
+        const { data: latestData } = await fundsAPI.latestNav(schemeCode)
+        const latestNav = Number(latestData?.nav || latestData?.latest_nav) || 10
+        const units = currentVal / latestNav
+        const histNav = units > 0 ? invested / units : latestNav
         const gainLoss = currentVal - invested
         const gainPct = (gainLoss / invested) * 100
-        const cagr = calcCAGR(invested, currentVal, form.investmentDate)
+        const cagr = form.investmentDate ? calcCAGR(invested, currentVal, form.investmentDate) : null
 
         setPreviewCalc({
           histNav,
           latestNav,
-          histDate: data.matched_date || form.investmentDate,
+          histDate: form.investmentDate || 'Live AMFI NAV',
           units,
           currentValue: currentVal,
           gainLoss,
@@ -160,20 +185,21 @@ export default function PortfolioTab() {
           cagr,
           loading: false,
         })
-      } else if (form.entryMode === 'current_value') {
-        const { data: latestData } = await fundsAPI.latestNav(schemeCode)
-        const latestNav = Number(latestData?.nav || latestData?.latest_nav) || 10
-        const currentVal = parseFloat(form.currentValue) || invested
-        const units = currentVal / latestNav
-        const histNav = invested / units
+      } else if (form.entryMode === 'date') {
+        const invDate = form.investmentDate || new Date().toISOString().split('T')[0]
+        const { data } = await fundsAPI.navOnDate(schemeCode, invDate)
+        const histNav = Number(data?.nav) || 10
+        const latestNav = Number(data?.latest_nav) || histNav
+        const units = invested / histNav
+        const currentVal = units * latestNav
         const gainLoss = currentVal - invested
         const gainPct = (gainLoss / invested) * 100
-        const cagr = calcCAGR(invested, currentVal, form.investmentDate)
+        const cagr = calcCAGR(invested, currentVal, invDate)
 
         setPreviewCalc({
           histNav,
           latestNav,
-          histDate: form.investmentDate,
+          histDate: data?.matched_date || invDate,
           units,
           currentValue: currentVal,
           gainLoss,
@@ -182,19 +208,23 @@ export default function PortfolioTab() {
           loading: false,
         })
       } else if (form.entryMode === 'units') {
+        const units = parseFloat(form.units)
+        if (!units || units <= 0) {
+          setPreviewCalc(null)
+          return
+        }
         const { data: latestData } = await fundsAPI.latestNav(schemeCode)
         const latestNav = Number(latestData?.nav || latestData?.latest_nav) || 10
-        const units = parseFloat(form.units) || 1
         const currentVal = units * latestNav
         const histNav = invested / units
         const gainLoss = currentVal - invested
         const gainPct = (gainLoss / invested) * 100
-        const cagr = calcCAGR(invested, currentVal, form.investmentDate)
+        const cagr = form.investmentDate ? calcCAGR(invested, currentVal, form.investmentDate) : null
 
         setPreviewCalc({
           histNav,
           latestNav,
-          histDate: form.investmentDate,
+          histDate: form.investmentDate || 'Live AMFI NAV',
           units,
           currentValue: currentVal,
           gainLoss,
@@ -211,7 +241,13 @@ export default function PortfolioTab() {
   // Debounce preview calculations on input change
   useEffect(() => {
     if (calcTimer.current) clearTimeout(calcTimer.current)
-    if (manualForm.selectedFund && manualForm.investedAmount) {
+    const hasInvested = parseFloat(manualForm.investedAmount) > 0
+    const hasModeInput =
+      (manualForm.entryMode === 'current_value' && parseFloat(manualForm.currentValue) > 0) ||
+      (manualForm.entryMode === 'date') ||
+      (manualForm.entryMode === 'units' && parseFloat(manualForm.units) > 0)
+
+    if (manualForm.selectedFund && hasInvested && hasModeInput) {
       calcTimer.current = setTimeout(() => {
         updatePreview(manualForm)
       }, 350)
@@ -261,8 +297,10 @@ export default function PortfolioTab() {
   }
 
   // ── Existing fund accumulation check ──────────────────────────────
-  const existingHolding = holdings.find(
-    (h) => h.scheme_code === manualForm.selectedFund?.scheme_code
+  const existingHolding = holdings.find((h) =>
+    Number(h.scheme_code) === Number(manualForm.selectedFund?.scheme_code) ||
+    (manualForm.selectedFund?.scheme_name &&
+      h.scheme_name.toLowerCase().trim() === manualForm.selectedFund.scheme_name.toLowerCase().trim())
   )
 
   const handleManualSubmit = async () => {
@@ -277,39 +315,70 @@ export default function PortfolioTab() {
         scheme_code: manualForm.selectedFund.scheme_code,
         scheme_name: manualForm.selectedFund.scheme_name,
         invested_amount: amount,
-        investment_date: manualForm.investmentDate,
+        investment_date: manualForm.entryMode === 'date' ? (manualForm.investmentDate || new Date().toISOString().split('T')[0]) : (manualForm.investmentDate || null),
         investment_type: manualForm.investmentType,
         category: manualForm.selectedFund.category || 'Equity',
       }
 
-      if (previewCalc && previewCalc.units > 0) {
-        payload.units = previewCalc.units
-        payload.avg_nav = previewCalc.histNav
-        payload.current_value = previewCalc.currentValue
-      } else {
-        const { data: navData } = await fundsAPI.latestNav(manualForm.selectedFund.scheme_code)
-        const nav = navData?.nav || navData?.latest_nav || 10
-        payload.units = amount / nav
-        payload.avg_nav = nav
-        payload.current_value = amount
+      // Ensure accurate auto-calculated units & valuation
+      let calcUnits = previewCalc?.units || 0
+      let calcAvgNav = previewCalc?.histNav || 0
+      let calcCurrentVal = previewCalc?.currentValue || 0
+
+      if (!calcUnits || calcUnits <= 0) {
+        if (manualForm.entryMode === 'current_value') {
+          const currentVal = parseFloat(manualForm.currentValue)
+          if (!currentVal || currentVal <= 0) {
+            setManualLoading(false)
+            return setManualError("Please enter today's value / amount today.")
+          }
+          const { data: latestData } = await fundsAPI.latestNav(manualForm.selectedFund.scheme_code)
+          const liveNav = Number(latestData?.nav || latestData?.latest_nav) || 10
+          calcCurrentVal = currentVal
+          calcUnits = calcCurrentVal / liveNav
+          calcAvgNav = amount / calcUnits
+        } else if (manualForm.entryMode === 'date') {
+          const invDate = manualForm.investmentDate || new Date().toISOString().split('T')[0]
+          const { data } = await fundsAPI.navOnDate(manualForm.selectedFund.scheme_code, invDate)
+          const histNav = Number(data?.nav) || 10
+          const liveNav = Number(data?.latest_nav) || histNav
+          calcUnits = amount / histNav
+          calcAvgNav = histNav
+          calcCurrentVal = calcUnits * liveNav
+        } else if (manualForm.entryMode === 'units') {
+          const units = parseFloat(manualForm.units)
+          if (!units || units <= 0) {
+            setManualLoading(false)
+            return setManualError('Please enter exact units owned.')
+          }
+          const { data: latestData } = await fundsAPI.latestNav(manualForm.selectedFund.scheme_code)
+          const liveNav = Number(latestData?.nav || latestData?.latest_nav) || 10
+          calcUnits = units
+          calcCurrentVal = calcUnits * liveNav
+          calcAvgNav = amount / calcUnits
+        }
       }
 
+      payload.units = calcUnits
+      payload.avg_nav = calcAvgNav
+      payload.current_value = calcCurrentVal
+
       const res = await portfolioAPI.addHolding(payload)
-      const actionMsg = res.data?.action === 'accumulated'
-        ? `Investment merged! Updated total value: ${fmtINR(res.data?.holding?.current_value || 0)}`
-        : 'Fund added to portfolio successfully!'
+      const actionMsg = res.data?.message || (res.data?.action === 'accumulated'
+        ? `Investment merged! Added auto-calculated value: ${fmtINR(calcCurrentVal)}. Updated total value: ${fmtINR(res.data?.holding?.current_value || 0)}`
+        : 'Fund added to portfolio successfully!')
 
       setManualSuccess(actionMsg)
+      await loadHoldings()
       setTimeout(() => {
         setManualSuccess(null)
         setShowManual(false)
         setManualForm(emptyForm())
         setFundSuggestions([])
         setPreviewCalc(null)
-        loadHoldings()
-      }, 1500)
+      }, 1800)
     } catch (err: any) {
-      setManualError(err.response?.data?.detail || 'Failed to add fund. Please try again.')
+      setManualError(err.response?.data?.detail || err.message || 'Failed to add fund. Please try again.')
     } finally {
       setManualLoading(false)
     }
@@ -496,63 +565,28 @@ export default function PortfolioTab() {
               />
             </div>
 
-            {/* 3. When did you invest? */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs text-slate-400 font-medium flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-indigo-400" /> 3. When did you invest?
-                </label>
-                <span className="text-[11px] text-slate-500">Pick date or quick preset</span>
-              </div>
-
-              {/* Quick Presets */}
-              <div className="flex gap-1.5 mb-2 overflow-x-auto pb-0.5">
-                {[
-                  { label: 'Today', years: 0 },
-                  { label: '1Y Ago', years: 1 },
-                  { label: '3Y Ago', years: 3 },
-                  { label: '5Y Ago', years: 5 },
-                  { label: '10Y Ago', years: 10 },
-                ].map((preset) => (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => setDatePreset(preset.years)}
-                    className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white border border-slate-700 transition-colors whitespace-nowrap"
-                  >
-                    {preset.label}
-                  </button>
-                ))}
-              </div>
-
-              <input
-                type="date"
-                className="input text-sm"
-                value={manualForm.investmentDate}
-                max={new Date().toISOString().split('T')[0]}
-                onChange={(e) => setManualForm((f) => ({ ...f, investmentDate: e.target.value }))}
-              />
-            </div>
-
-            {/* 4. Entry Mode Selector */}
+            {/* 3. Valuation & Growth Mode Selector */}
             <div>
               <label className="text-xs text-slate-400 mb-1 block font-medium">
-                4. Units & Valuation Mode
+                3. Choose Calculation Method
               </label>
               <div className="grid grid-cols-3 gap-1.5 p-1 bg-slate-900 rounded-xl">
                 {[
-                  { id: 'date', label: 'Auto (Date NAV)' },
-                  { id: 'current_value', label: "Today's Value" },
-                  { id: 'units', label: 'Exact Units' },
+                  { id: 'current_value', label: "⚡ Amount Today" },
+                  { id: 'date', label: '📅 Auto NAV (Date)' },
+                  { id: 'units', label: '🔢 Exact Units' },
                 ].map((mode) => (
                   <button
                     key={mode.id}
                     type="button"
-                    onClick={() => setManualForm((f) => ({ ...f, entryMode: mode.id as EntryMode }))}
-                    className={`py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+                    onClick={() => {
+                      setManualForm((f) => ({ ...f, entryMode: mode.id as EntryMode }))
+                      setPreviewCalc(null)
+                    }}
+                    className={`py-2 px-1 text-xs font-semibold rounded-lg transition-all text-center ${
                       manualForm.entryMode === mode.id
-                        ? 'bg-indigo-600 text-white'
-                        : 'text-slate-400 hover:text-slate-200'
+                        ? 'bg-indigo-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                     }`}
                   >
                     {mode.label}
@@ -561,25 +595,72 @@ export default function PortfolioTab() {
               </div>
             </div>
 
-            {/* Optional Current Value input */}
+            {/* Mode-Specific Field */}
             {manualForm.entryMode === 'current_value' && (
               <div>
-                <label className="text-xs text-slate-400 mb-1 block">What is its value today? (₹)</label>
+                <label className="text-xs text-slate-400 mb-1 block font-medium">
+                  4. What is its value today? / Amount Today (₹)
+                </label>
                 <input
                   type="number"
                   className="input"
-                  placeholder="e.g. 100000"
+                  placeholder="e.g. 35000"
                   value={manualForm.currentValue}
                   onChange={(e) => setManualForm((f) => ({ ...f, currentValue: e.target.value }))}
                   min={1}
                 />
+                <p className="text-[11px] text-slate-500 mt-1 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span>Auto-calculates your percentage growth, total profit, units, and purchase NAV immediately — no date of investment needed!</span>
+                </p>
               </div>
             )}
 
-            {/* Optional Units input */}
+            {manualForm.entryMode === 'date' && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-slate-400 font-medium flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5 text-indigo-400" /> 4. When did you invest?
+                  </label>
+                  <span className="text-[11px] text-slate-500">Pick date or quick preset</span>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex gap-1.5 mb-2 overflow-x-auto pb-0.5">
+                  {[
+                    { label: 'Today', years: 0 },
+                    { label: '1Y Ago', years: 1 },
+                    { label: '3Y Ago', years: 3 },
+                    { label: '5Y Ago', years: 5 },
+                    { label: '10Y Ago', years: 10 },
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      type="button"
+                      onClick={() => setDatePreset(preset.years)}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-slate-800 text-slate-300 hover:bg-indigo-600 hover:text-white border border-slate-700 transition-colors whitespace-nowrap"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="date"
+                  className="input text-sm"
+                  value={manualForm.investmentDate || new Date().toISOString().split('T')[0]}
+                  max={new Date().toISOString().split('T')[0]}
+                  onChange={(e) => setManualForm((f) => ({ ...f, investmentDate: e.target.value }))}
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Fetches historical AMFI NAV on this date to auto-calculate your units and today's value.
+                </p>
+              </div>
+            )}
+
             {manualForm.entryMode === 'units' && (
               <div>
-                <label className="text-xs text-slate-400 mb-1 block">Exact Units Owned</label>
+                <label className="text-xs text-slate-400 mb-1 block font-medium">4. Exact Units Owned</label>
                 <input
                   type="number"
                   step="any"
@@ -664,6 +745,38 @@ export default function PortfolioTab() {
                   <span>Units: <strong className="text-slate-300">{previewCalc.units.toFixed(3)}</strong></span>
                   <span>Date: {previewCalc.histDate}</span>
                 </div>
+
+                {/* Combined Accumulation Card when fund already exists */}
+                {existingHolding && (
+                  <div className="mt-2.5 pt-2.5 border-t border-indigo-900/50 bg-indigo-950/40 rounded-xl p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-indigo-300 font-semibold flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-yellow-400" /> Auto-Accumulating to Existing Fund
+                      </span>
+                      <span className="text-emerald-400 font-bold">
+                        Total: {fmtINR(existingHolding.current_value + previewCalc.currentValue)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5 text-center text-[10px]">
+                      <div className="bg-slate-900/70 rounded p-1.5">
+                        <span className="text-slate-400 block">Current Balance</span>
+                        <span className="font-semibold text-slate-200">{fmtINR(existingHolding.current_value)}</span>
+                      </div>
+                      <div className="bg-slate-900/70 rounded p-1.5">
+                        <span className="text-slate-400 block">+ Added NAV Value</span>
+                        <span className="font-semibold text-emerald-400">+{fmtINR(previewCalc.currentValue)}</span>
+                      </div>
+                      <div className="bg-slate-900/70 rounded p-1.5 border border-indigo-500/30">
+                        <span className="text-indigo-300 block">New Total Value</span>
+                        <span className="font-bold text-emerald-300">{fmtINR(existingHolding.current_value + previewCalc.currentValue)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-400 pt-0.5">
+                      <span>Total Units: {(existingHolding.units + previewCalc.units).toFixed(3)} (+{previewCalc.units.toFixed(3)})</span>
+                      <span>Total Invested: {fmtINR(existingHolding.invested + (parseFloat(manualForm.investedAmount) || 0))}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -681,14 +794,19 @@ export default function PortfolioTab() {
             <button
               onClick={handleManualSubmit}
               disabled={manualLoading || !!manualSuccess}
-              className="btn-primary w-full flex items-center justify-center gap-2"
+              className="btn-primary w-full flex items-center justify-center gap-2 cursor-pointer"
             >
               {manualLoading
-                ? 'Processing…'
+                ? 'Calculating & Merging…'
                 : manualSuccess
                 ? '✓ Success!'
                 : existingHolding
-                ? <><Sparkles className="w-4 h-4 text-yellow-400" /> Accumulate into Existing Fund</>
+                ? (
+                  <>
+                    <Sparkles className="w-4 h-4 text-yellow-400" />
+                    Accumulate into Existing Fund {previewCalc ? `(+${fmtINR(previewCalc.currentValue)})` : ''}
+                  </>
+                )
                 : <><Plus className="w-4 h-4" /> Add to Portfolio</>
               }
             </button>
@@ -873,26 +991,88 @@ export default function PortfolioTab() {
           {/* ── Tax Pack ──────────────────────────── */}
           <div className="card">
             <div className="flex items-center justify-between mb-3">
-              <p className="section-title mb-0">1-Click ITR Tax Pack</p>
-              <button onClick={loadTax} className="btn-secondary text-sm py-2 px-4">
-                Generate
+              <div>
+                <p className="section-title mb-0">1-Click ITR Tax Pack</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Pre-computed STCG, LTCG (Budget 2024), exemptions & CA-ready ITR CSV
+                </p>
+              </div>
+              <button
+                onClick={loadTax}
+                disabled={taxLoading}
+                className="btn-secondary text-sm py-2 px-4 flex items-center gap-1.5"
+              >
+                {taxLoading ? 'Calculating…' : showTax ? 'Refresh' : 'Generate'}
               </button>
             </div>
+
+            {taxError && (
+              <div className="mb-3 p-3 bg-red-900/20 border border-red-800 rounded-xl text-xs text-red-300">
+                {taxError}
+              </div>
+            )}
+
             {showTax && taxData && (
-              <div className="space-y-2">
-                <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   <SummaryBox label="LTCG Total" value={fmtINR(taxData.ltcg_total)} />
                   <SummaryBox label="STCG Total" value={fmtINR(taxData.stcg_total)} />
                   <SummaryBox label="LTCG Exempt (₹1.25L)" value={fmtINR(taxData.ltcg_exempt)} color="text-green-400" />
-                  <SummaryBox label="Tax Due" value={fmtINR(taxData.tax_due)} color={taxData.tax_due > 0 ? 'text-red-400' : 'text-green-400'} />
+                  <SummaryBox label="Tax Due (+4% Cess)" value={fmtINR(taxData.tax_due)} color={taxData.tax_due > 0 ? 'text-red-400' : 'text-green-400'} />
                 </div>
-                <a
-                  href={`${import.meta.env.VITE_API_URL || '/api'}/planner/tax-pack?format=csv`}
-                  download="tax_pack.csv"
-                  className="flex items-center justify-center gap-2 btn-secondary w-full mt-2"
+
+                {taxData.warnings && taxData.warnings.length > 0 && (
+                  <div className="space-y-1">
+                    {taxData.warnings.map((w, idx) => (
+                      <p key={idx} className="text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-800/50 rounded-lg px-3 py-1.5">
+                        {w}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {taxData.lines && taxData.lines.length > 0 && (
+                  <div className="border border-slate-800 rounded-xl overflow-hidden mt-3">
+                    <div className="bg-slate-800/60 px-3 py-2 text-xs font-semibold text-slate-300 flex justify-between items-center">
+                      <span>Fund-Level Tax Breakdown</span>
+                      <span className="text-[11px] text-slate-400">{taxData.lines.length} {taxData.lines.length === 1 ? 'holding' : 'holdings'}</span>
+                    </div>
+                    <div className="divide-y divide-slate-800 max-h-60 overflow-y-auto">
+                      {taxData.lines.map((l, i) => (
+                        <div key={i} className="p-3 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 hover:bg-slate-800/30 transition-colors">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-semibold text-slate-200 truncate">{l.scheme_name}</p>
+                            <p className="text-[11px] text-slate-500 mt-0.5">
+                              Bought {l.buy_date} @ ₹{l.buy_nav} • Live @ ₹{l.sell_nav} • {l.units_sold?.toFixed(3)} units
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold tracking-wide uppercase ${
+                              l.gain_type === 'LTCG'
+                                ? 'bg-indigo-900/40 text-indigo-300 border border-indigo-700/50'
+                                : 'bg-amber-900/40 text-amber-300 border border-amber-700/50'
+                            }`}>
+                              {l.gain_type}
+                            </span>
+                            <div className="text-right">
+                              <p className={`font-bold ${colorForValue(l.gain_amount)}`}>
+                                {l.gain_amount >= 0 ? '+' : ''}{fmtINR(l.gain_amount)}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleDownloadCSV}
+                  className="flex items-center justify-center gap-2 btn-secondary w-full mt-2 py-2.5 font-medium"
                 >
-                  <Download className="w-4 h-4" /> Download CSV
-                </a>
+                  <Download className="w-4 h-4 text-indigo-400" /> Download CA-Ready ITR CSV ({taxData.financial_year || 'FY 2026-27'})
+                </button>
               </div>
             )}
           </div>

@@ -93,9 +93,17 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
 
         new_alerts = []
 
+        # If user has holdings, immediately dismiss any stale 'portfolio_empty' onboarding notices
+        if holdings:
+            conn.execute(
+                "UPDATE user_alerts SET is_dismissed = 1 WHERE user_id = ? AND alert_type = 'portfolio_empty'",
+                (user_id,),
+            )
+            conn.commit()
+
         # If user has NO mutual funds in portfolio, provide clear onboarding notice
         if not holdings:
-            key = ("portfolio_empty", "No Mutual Funds in Portfolio Yet", None)
+            key = ("portfolio_empty", "📋 No Mutual Funds in Portfolio Yet", None)
             if key not in existing_keys:
                 new_alerts.append({
                     "id": str(uuid.uuid4()),
@@ -437,14 +445,58 @@ def evaluate_and_generate_alerts(user_id: str) -> List[dict]:
     return get_active_user_alerts(user_id)
 
 
+def _alert_rank(alert: dict) -> int:
+    """
+    Ranks alerts strictly in order of importance & regularity:
+    Group 1: Portfolio Holdings Alerts (Held Mutual Funds) — At the very top
+      - Rank 0: Portfolio Duds / Expense Drags / Take money out / Concentration (Highest Urgency)
+      - Rank 1: Portfolio Value Entry / Dip opportunities
+      - Rank 2: Portfolio Smart SIP execution plans
+    Group 2: Everything else one after the other in order of importance & regularity
+      - Rank 3: FY Investment Plan & Goal Glide-path Changelogs
+      - Rank 4: Macro Market Volatility & Global Risk Signals
+      - Rank 5: Portfolio onboarding notice (only if 0 holdings)
+    """
+    a_type = alert.get("alert_type", "")
+    sev = alert.get("severity", "INFO")
+    has_scheme = alert.get("scheme_code") is not None or alert.get("scheme_name") is not None
+
+    if a_type == "dud" or (has_scheme and sev in ("DANGER", "WARNING")):
+        return 0
+    if a_type == "entry" or (has_scheme and sev == "SUCCESS"):
+        return 1
+    if a_type == "sip" or has_scheme:
+        return 2
+    if a_type == "plan_update":
+        return 3
+    if a_type == "macro":
+        return 4
+    if a_type == "portfolio_empty":
+        return 5
+    return 6
+
+
 def get_active_user_alerts(user_id: str) -> List[dict]:
-    """Retrieve all non-dismissed, non-expired alerts for user."""
+    """Retrieve all non-dismissed, non-expired alerts for user in strict priority order."""
     with get_db() as conn:
+        # Check holdings count: if holdings exist, purge any portfolio_empty alert
+        holding_count = conn.execute(
+            "SELECT COUNT(*) FROM user_holdings WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()[0]
+
+        if holding_count > 0:
+            conn.execute(
+                "UPDATE user_alerts SET is_dismissed = 1 WHERE user_id = ? AND alert_type = 'portfolio_empty'",
+                (user_id,),
+            )
+
         # Mark expired alerts as dismissed
         conn.execute(
             "UPDATE user_alerts SET is_dismissed = 1 WHERE user_id = ? AND datetime(expires_at) <= datetime('now')",
             (user_id,),
         )
+        conn.commit()
 
         rows = conn.execute(
             """
@@ -452,7 +504,6 @@ def get_active_user_alerts(user_id: str) -> List[dict]:
                    action_text, created_at, expires_at
             FROM user_alerts
             WHERE user_id = ? AND is_dismissed = 0
-            ORDER BY created_at DESC
             """,
             (user_id,),
         ).fetchall()
@@ -460,6 +511,10 @@ def get_active_user_alerts(user_id: str) -> List[dict]:
         now = datetime.utcnow()
         results = []
         for r in rows:
+            # If user has holdings, suppress any old lingering portfolio_empty alerts
+            if holding_count > 0 and r["alert_type"] == "portfolio_empty":
+                continue
+
             try:
                 exp_dt = datetime.strptime(r["expires_at"][:19], "%Y-%m-%d %H:%M:%S")
                 days_left = max(0, (exp_dt - now).days)
@@ -480,6 +535,13 @@ def get_active_user_alerts(user_id: str) -> List[dict]:
                 "days_remaining": days_left,
             })
 
+        # Sort strictly: Portfolio alerts at top (Dud -> Entry -> SIP), then Plan updates, then Macro
+        results.sort(
+            key=lambda a: (
+                _alert_rank(a),
+                -(datetime.strptime(a["created_at"][:19], "%Y-%m-%d %H:%M:%S").timestamp() if a.get("created_at") else 0)
+            )
+        )
         return results
 
 
@@ -499,6 +561,7 @@ def get_alert_settings(user: dict = Depends(get_current_user)):
 
         if row:
             return {
+                "user_id": user_id,
                 "entry_alert": bool(row["entry_alert"]),
                 "macro_alert": bool(row["macro_alert"]),
                 "sip_reminder": bool(row["sip_reminder"]),
@@ -507,6 +570,7 @@ def get_alert_settings(user: dict = Depends(get_current_user)):
             }
 
         return {
+            "user_id": user_id,
             "entry_alert": True,
             "macro_alert": True,
             "sip_reminder": True,
@@ -547,14 +611,11 @@ def update_alert_settings(prefs: AlertPreferences, user: dict = Depends(get_curr
 @router.get("/history", summary="Alias for alerts feed")
 def get_alerts_feed(user: dict = Depends(get_current_user)):
     """
-    Returns active alerts for the current user.
-    If no alerts exist yet, evaluates live market signals and populates the feed.
+    Returns active alerts for the current user, strictly ranked with portfolio alerts at the top.
+    Evaluates current holdings and live signals so the feed stays continually updated.
     """
     user_id = user["user_id"]
-    alerts = get_active_user_alerts(user_id)
-    if not alerts:
-        alerts = evaluate_and_generate_alerts(user_id)
-    return alerts
+    return evaluate_and_generate_alerts(user_id)
 
 
 @router.post("/refresh", summary="Re-evaluate live market signals and refresh alerts")

@@ -390,3 +390,4 @@ def compute_macro_analogues(
         hedging_plan=hedging_plan,
         ranked_analogues=ranked_list,
     )
+

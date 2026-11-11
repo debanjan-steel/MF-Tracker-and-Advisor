@@ -181,12 +181,16 @@ export interface TaxLine {
 }
 
 export interface TaxSummary {
+  financial_year?: string
+  transaction_count?: number
   ltcg_total: number
   stcg_total: number
   ltcg_exempt: number
   ltcg_taxable: number
   tax_due: number
   lines: TaxLine[]
+  warnings?: string[]
+  csv_download?: string
 }
 
 // ── Tactical Investment Plan Types ──────────────────────────────────────────

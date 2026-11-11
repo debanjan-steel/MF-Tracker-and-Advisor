@@ -1,7 +1,18 @@
 import React, { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import { authAPI } from '../lib/api'
-import { Eye, EyeOff, TrendingUp, ShieldCheck, Zap, ArrowLeft, Mail, CheckCircle } from 'lucide-react'
+import {
+  Eye,
+  EyeOff,
+  TrendingUp,
+  ShieldCheck,
+  Zap,
+  ArrowLeft,
+  Mail,
+  CheckCircle,
+  AlertTriangle,
+  KeyRound,
+} from 'lucide-react'
 
 type Mode = 'login' | 'signup' | 'forgot'
 
@@ -13,16 +24,67 @@ export default function AuthPage() {
   const [forgotLoading, setForgotLoading] = useState(false)
   const [forgotSuccess, setForgotSuccess] = useState<string | null>(null)
   const [forgotError, setForgotError] = useState<string | null>(null)
+  const [existingEmailWarning, setExistingEmailWarning] = useState<string | null>(null)
+  const [checkingEmail, setCheckingEmail] = useState(false)
   const { login, signup, loading, error, clearError } = useAuthStore()
+
+  const handleEmailBlur = async () => {
+    if (mode !== 'signup' || !email || !email.includes('@')) return
+    try {
+      setCheckingEmail(true)
+      const res = await authAPI.checkEmail(email)
+      if (res.data?.exists) {
+        setExistingEmailWarning(
+          res.data.message ||
+            "An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password."
+        )
+      } else {
+        setExistingEmailWarning(null)
+      }
+    } catch {
+      // Ignore background check errors; handleSubmit failsafe will enforce on submission
+    } finally {
+      setCheckingEmail(false)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     clearError()
+
+    if (mode === 'signup') {
+      if (existingEmailWarning) return
+
+      try {
+        setCheckingEmail(true)
+        const checkRes = await authAPI.checkEmail(email)
+        if (checkRes.data?.exists) {
+          setExistingEmailWarning(
+            checkRes.data.message ||
+              "An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password."
+          )
+          setCheckingEmail(false)
+          return
+        }
+      } catch {
+        // Fall through to backend signup failsafe
+      } finally {
+        setCheckingEmail(false)
+      }
+    }
+
     try {
       if (mode === 'login') await login(email, password)
       else if (mode === 'signup') await signup(email, password)
-    } catch {
-      /* error handled by store */
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || err.message || ''
+      if (
+        detail.toLowerCase().includes('already exists') ||
+        detail.toLowerCase().includes('already registered') ||
+        detail.toLowerCase().includes('forgot password')
+      ) {
+        setExistingEmailWarning(detail)
+      }
     }
   }
 
@@ -42,6 +104,20 @@ export default function AuthPage() {
       setForgotLoading(false)
     }
   }
+
+  const isExistingAccount =
+    !!existingEmailWarning ||
+    !!(
+      error &&
+      (error.toLowerCase().includes('already exists') ||
+        error.toLowerCase().includes('already registered') ||
+        error.toLowerCase().includes('forgot password'))
+    )
+
+  const activeExistingMessage =
+    existingEmailWarning ||
+    (isExistingAccount ? error : null) ||
+    "An account with this email already exists. You cannot create another account with this email. Please click 'Forgot password?' to retrieve or reset your password."
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-12 bg-slate-900">
@@ -75,7 +151,13 @@ export default function AuthPage() {
           <div>
             <button
               type="button"
-              onClick={() => { setMode('login'); clearError(); setForgotError(null); setForgotSuccess(null) }}
+              onClick={() => {
+                setMode('login')
+                clearError()
+                setForgotError(null)
+                setForgotSuccess(null)
+                setExistingEmailWarning(null)
+              }}
               className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 mb-4 transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
@@ -136,7 +218,11 @@ export default function AuthPage() {
               {(['login', 'signup'] as const).map((m) => (
                 <button
                   key={m}
-                  onClick={() => { setMode(m); clearError() }}
+                  onClick={() => {
+                    setMode(m)
+                    clearError()
+                    setExistingEmailWarning(null)
+                  }}
                   className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
                     mode === m
                       ? 'bg-indigo-600 text-white'
@@ -156,7 +242,12 @@ export default function AuthPage() {
                   className="input"
                   placeholder="you@example.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value)
+                    if (existingEmailWarning) setExistingEmailWarning(null)
+                    if (error) clearError()
+                  }}
+                  onBlur={handleEmailBlur}
                   required
                   autoComplete="email"
                 />
@@ -168,7 +259,13 @@ export default function AuthPage() {
                   {mode === 'login' && (
                     <button
                       type="button"
-                      onClick={() => { setMode('forgot'); clearError(); setForgotError(null); setForgotSuccess(null) }}
+                      onClick={() => {
+                        setMode('forgot')
+                        clearError()
+                        setForgotError(null)
+                        setForgotSuccess(null)
+                        setExistingEmailWarning(null)
+                      }}
                       className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
                     >
                       Forgot password?
@@ -196,14 +293,50 @@ export default function AuthPage() {
                 </div>
               </div>
 
-              {error && (
+              {/* Failsafe Alert for Existing Accounts */}
+              {isExistingAccount ? (
+                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs space-y-2.5">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-amber-300">Account Already Exists</p>
+                      <p className="text-amber-200/90 leading-relaxed">
+                        {activeExistingMessage}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot')
+                      clearError()
+                      setExistingEmailWarning(null)
+                      setForgotError(null)
+                      setForgotSuccess(null)
+                    }}
+                    className="w-full py-2 px-3 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5" /> Click here to retrieve password (Forgot Password) &rarr;
+                  </button>
+                </div>
+              ) : error ? (
                 <p className="text-red-400 text-sm bg-red-900/20 border border-red-800 rounded-lg px-3 py-2">
                   {error}
                 </p>
-              )}
+              ) : null}
 
-              <button type="submit" className="btn-primary w-full" disabled={loading}>
-                {loading ? 'Please wait…' : mode === 'login' ? 'Sign In' : 'Create Account'}
+              <button
+                type="submit"
+                className="btn-primary w-full"
+                disabled={loading || checkingEmail || (mode === 'signup' && isExistingAccount)}
+              >
+                {loading || checkingEmail
+                  ? 'Please wait…'
+                  : mode === 'signup' && isExistingAccount
+                  ? 'Account Already Exists'
+                  : mode === 'login'
+                  ? 'Sign In'
+                  : 'Create Account'}
               </button>
             </form>
 
@@ -212,7 +345,13 @@ export default function AuthPage() {
                 Forgot your password? Click{' '}
                 <button
                   type="button"
-                  onClick={() => { setMode('forgot'); clearError(); setForgotError(null); setForgotSuccess(null) }}
+                  onClick={() => {
+                    setMode('forgot')
+                    clearError()
+                    setForgotError(null)
+                    setForgotSuccess(null)
+                    setExistingEmailWarning(null)
+                  }}
                   className="text-indigo-400 hover:underline"
                 >
                   Forgot password
@@ -221,9 +360,39 @@ export default function AuthPage() {
               </p>
             )}
             {mode === 'signup' && (
-              <p className="text-center text-xs text-slate-500 mt-4">
-                Your PAN is never stored. Only email &amp; encrypted password.
-              </p>
+              <div className="text-center text-xs text-slate-400 mt-4 space-y-1">
+                <p>
+                  Already have an account?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('login')
+                      clearError()
+                      setExistingEmailWarning(null)
+                    }}
+                    className="text-indigo-400 hover:text-indigo-300 underline font-medium"
+                  >
+                    Sign In
+                  </button>
+                  {' or '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('forgot')
+                      clearError()
+                      setExistingEmailWarning(null)
+                      setForgotError(null)
+                      setForgotSuccess(null)
+                    }}
+                    className="text-amber-400 hover:text-amber-300 underline font-medium"
+                  >
+                    Forgot Password?
+                  </button>
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  Your PAN is never stored. Only email &amp; encrypted password.
+                </p>
+              </div>
             )}
           </>
         )}
@@ -231,4 +400,5 @@ export default function AuthPage() {
     </div>
   )
 }
+
 

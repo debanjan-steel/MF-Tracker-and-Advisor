@@ -11,7 +11,7 @@ Investment planner routes:
 from __future__ import annotations
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from pydantic import BaseModel
 
 from src.auth.supabase_client import get_current_user
@@ -21,7 +21,11 @@ from src.analytics.smart_sip import (
 )
 from src.analytics.allocation_advisor import compute_allocation_advice
 from src.analytics.goal_planner import FinancialGoal, generate_glide_path_recommendation
-from src.analytics.tax_pack import PurchaseLot, RedemptionTransaction, compute_capital_gains
+from src.analytics.tax_pack import (
+    PurchaseLot, RedemptionTransaction, compute_capital_gains,
+    LTCG_THRESHOLD_DAYS, LTCG_EXEMPTION_LIMIT, LTCG_TAX_RATE, STCG_TAX_RATE,
+    HEALTH_EDUCATION_CESS,
+)
 
 router = APIRouter()
 
@@ -604,15 +608,232 @@ class RedemptionInput(BaseModel):
 
 
 class TaxPackRequest(BaseModel):
-    purchase_lots: list[LotInput]
-    redemptions: list[RedemptionInput]
+    purchase_lots: Optional[list[LotInput]] = None
+    lots: Optional[list[LotInput]] = None
+    redemptions: Optional[list[RedemptionInput]] = None
+    financial_year: Optional[str] = None
     financial_year_end: Optional[str] = None  # YYYY-MM-DD, e.g. "2025-03-31"
 
 
+def _generate_tax_pack_for_user(user_id: str, fy_end: Optional[date] = None) -> dict:
+    """
+    Auto-computes an ITR capital gains tax report directly from the user's
+    stored portfolio holdings in SQLite, updating valuation with live NAV.
+    """
+    from src.api.routes.portfolio import _get_portfolio_db
+    from src.data.data_manager import data_manager
+    import csv
+    import io
+
+    today = date.today()
+    if fy_end is None:
+        if today.month >= 4:
+            fy_label = f"{today.year}-{str(today.year + 1)[-2:]}"
+        else:
+            fy_label = f"{today.year - 1}-{str(today.year)[-2:]}"
+    else:
+        fy_yr = fy_end.year
+        fy_label = f"{fy_yr - 1}-{str(fy_yr)[-2:]}"
+
+    conn = _get_portfolio_db()
+    rows = []
+    try:
+        cur = conn.execute(
+            "SELECT * FROM user_holdings WHERE user_id = ? ORDER BY invested_amount DESC",
+            (user_id,),
+        )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "financial_year": fy_label,
+            "transaction_count": 0,
+            "ltcg_total": 0.0,
+            "total_ltcg": 0.0,
+            "stcg_total": 0.0,
+            "total_stcg": 0.0,
+            "ltcg_exempt": 0.0,
+            "ltcg_taxable": 0.0,
+            "ltcg_after_exemption": 0.0,
+            "tax_due": 0.0,
+            "estimated_total_tax_with_cess": 0.0,
+            "estimated_stcg_tax": 0.0,
+            "estimated_ltcg_tax": 0.0,
+            "warnings": [
+                "No holdings found in your portfolio. Upload a CAS statement or add funds manually to compute tax."
+            ],
+            "csv_download": "Financial Year,Fund Name,Purchase Date,Valuation Date,Holding Days,Gain Type,Units,Cost Basis (₹),Proceeds (₹),Capital Gain (₹),Tax Rate (%),Estimated Tax (₹)\n",
+            "transactions": [],
+            "lines": [],
+        }
+
+    records = []
+    lines = []
+    transactions = []
+
+    for r in rows:
+        scheme_code = r["scheme_code"]
+        scheme_name = r["scheme_name"]
+        units = float(r["units"])
+        avg_nav = float(r["avg_nav"])
+        invested = float(r["invested_amount"])
+
+        # Live NAV lookup
+        live_nav = None
+        try:
+            nav_info = data_manager.get_latest_nav(scheme_code)
+            if isinstance(nav_info, dict) and nav_info.get("nav"):
+                live_nav = float(nav_info["nav"])
+        except Exception:
+            pass
+
+        if not live_nav or live_nav <= 0:
+            live_nav = avg_nav
+
+        current_val = units * live_nav
+        cost_basis = invested if invested > 0 else (units * avg_nav)
+        gain = current_val - cost_basis
+
+        # Determine holding duration
+        p_date = None
+        if r["investment_date"]:
+            try:
+                p_date = date.fromisoformat(r["investment_date"][:10])
+            except Exception:
+                pass
+        if not p_date and r["created_at"]:
+            try:
+                p_date = date.fromisoformat(r["created_at"][:10])
+            except Exception:
+                pass
+        if not p_date:
+            p_date = today
+
+        holding_days = max(0, (today - p_date).days)
+        if holding_days >= LTCG_THRESHOLD_DAYS:
+            gain_type = "LTCG"
+            tax_rate = LTCG_TAX_RATE
+        else:
+            gain_type = "STCG"
+            tax_rate = STCG_TAX_RATE
+
+        estimated_tax = max(0.0, gain) * tax_rate if gain > 0 else 0.0
+
+        records.append({
+            "scheme_name": scheme_name,
+            "buy_date": p_date.isoformat(),
+            "sell_date": today.isoformat(),
+            "holding_days": holding_days,
+            "gain_type": gain_type,
+            "units": units,
+            "cost_basis": cost_basis,
+            "proceeds": current_val,
+            "gain": gain,
+            "tax_rate": tax_rate,
+            "estimated_tax": estimated_tax,
+            "grandfathered": False,
+        })
+
+        lines.append({
+            "scheme_name": scheme_name,
+            "units_sold": round(units, 4),
+            "buy_date": p_date.isoformat(),
+            "sell_date": today.isoformat(),
+            "buy_nav": round(avg_nav, 2),
+            "sell_nav": round(live_nav, 2),
+            "gain_type": gain_type,
+            "gain_amount": round(gain, 2),
+        })
+
+        transactions.append({
+            "fund": scheme_name,
+            "buy_date": p_date.isoformat(),
+            "sell_date": today.isoformat(),
+            "units": round(units, 4),
+            "holding_days": holding_days,
+            "gain_type": gain_type,
+            "gain": round(gain, 2),
+            "estimated_tax": round(estimated_tax, 2),
+            "grandfathered": False,
+        })
+
+    # Totals across records
+    total_stcg = sum(r["gain"] for r in records if r["gain_type"] == "STCG" and r["gain"] > 0)
+    total_ltcg = sum(r["gain"] for r in records if r["gain_type"] == "LTCG" and r["gain"] > 0)
+    total_stcg_loss = sum(r["gain"] for r in records if r["gain_type"] == "STCG" and r["gain"] < 0)
+    total_ltcg_loss = sum(r["gain"] for r in records if r["gain_type"] == "LTCG" and r["gain"] < 0)
+
+    net_stcg = total_stcg + total_stcg_loss
+    net_ltcg = total_ltcg + total_ltcg_loss
+    ltcg_exempt = min(max(0.0, net_ltcg), LTCG_EXEMPTION_LIMIT)
+    ltcg_after_exemption = max(0.0, net_ltcg - LTCG_EXEMPTION_LIMIT)
+
+    stcg_tax = max(0.0, net_stcg) * STCG_TAX_RATE
+    ltcg_tax = ltcg_after_exemption * LTCG_TAX_RATE
+    total_tax = stcg_tax + ltcg_tax
+    tax_with_cess = total_tax * (1.0 + HEALTH_EDUCATION_CESS)
+
+    warnings = []
+    if net_ltcg > 0 and net_ltcg <= LTCG_EXEMPTION_LIMIT:
+        warnings.append(
+            f"✅ LTCG of ₹{net_ltcg:,.0f} is within the ₹1,25,000 annual exemption limit. Zero LTCG tax payable!"
+        )
+
+    # Build CA-ready CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Financial Year", "Fund Name", "Purchase Date", "Valuation Date",
+        "Holding Days", "Gain Type", "Units", "Cost Basis (₹)", "Current Value (₹)",
+        "Capital Gain (₹)", "Tax Rate (%)", "Estimated Tax (₹)", "Grandfathered",
+    ])
+    for r in records:
+        writer.writerow([
+            fy_label,
+            r["scheme_name"],
+            r["buy_date"],
+            r["sell_date"],
+            r["holding_days"],
+            r["gain_type"],
+            f"{r['units']:.4f}",
+            f"{r['cost_basis']:.2f}",
+            f"{r['proceeds']:.2f}",
+            f"{r['gain']:.2f}",
+            f"{r['tax_rate'] * 100:.1f}",
+            f"{r['estimated_tax']:.2f}",
+            "No",
+        ])
+    csv_str = output.getvalue()
+
+    return {
+        "financial_year": fy_label,
+        "transaction_count": len(records),
+        "ltcg_total": round(net_ltcg, 2),
+        "total_ltcg": round(net_ltcg, 2),
+        "stcg_total": round(net_stcg, 2),
+        "total_stcg": round(net_stcg, 2),
+        "ltcg_exempt": round(ltcg_exempt, 2),
+        "ltcg_taxable": round(ltcg_after_exemption, 2),
+        "ltcg_after_exemption": round(ltcg_after_exemption, 2),
+        "tax_due": round(tax_with_cess, 2),
+        "estimated_total_tax_with_cess": round(tax_with_cess, 2),
+        "estimated_stcg_tax": round(stcg_tax, 2),
+        "estimated_ltcg_tax": round(ltcg_tax, 2),
+        "warnings": warnings,
+        "csv_download": csv_str,
+        "transactions": transactions,
+        "lines": lines,
+    }
+
+
 @router.post("/tax-pack", summary="1-click capital gains tax pack for ITR filing")
-def tax_pack(body: TaxPackRequest, user: dict = Depends(get_current_user)):
+def tax_pack(body: Optional[TaxPackRequest] = None, user: dict = Depends(get_current_user)):
     """
     Generates a full capital gains summary for the financial year.
+    If explicit purchase lots and redemptions are provided, matches them via FIFO.
+    If omitted or empty, auto-generates the tax pack directly from the user's portfolio holdings.
     Covers:
     - STCG (< 1 year, taxed at 20%)
     - LTCG (≥ 1 year, taxed at 12.5%, exempt up to ₹1.25L)
@@ -620,57 +841,112 @@ def tax_pack(body: TaxPackRequest, user: dict = Depends(get_current_user)):
     - Per-transaction breakdown
     - Downloadable CSV data
     """
-    lots = [
-        PurchaseLot(
-            scheme_code=l.scheme_code,
-            scheme_name=l.scheme_name,
-            purchase_date=date.fromisoformat(l.purchase_date),
-            units=l.units,
-            purchase_nav=l.purchase_nav,
-            purchase_amount=l.purchase_amount,
-            nav_on_31jan2018=l.nav_on_31jan2018,
+    raw_lots = (body.purchase_lots or []) + (body.lots or []) if body else []
+    raw_redemptions = body.redemptions or [] if body else []
+
+    if raw_lots or raw_redemptions:
+        lots = [
+            PurchaseLot(
+                scheme_code=l.scheme_code,
+                scheme_name=l.scheme_name,
+                purchase_date=date.fromisoformat(l.purchase_date),
+                units=l.units,
+                purchase_nav=l.purchase_nav,
+                purchase_amount=l.purchase_amount,
+                nav_on_31jan2018=l.nav_on_31jan2018,
+            )
+            for l in raw_lots
+        ]
+        redemptions = [
+            RedemptionTransaction(
+                scheme_code=r.scheme_code,
+                scheme_name=r.scheme_name,
+                redemption_date=date.fromisoformat(r.redemption_date),
+                units_redeemed=r.units_redeemed,
+                redemption_nav=r.redemption_nav,
+                redemption_amount=r.redemption_amount,
+            )
+            for r in raw_redemptions
+        ]
+        fy_end = None
+        if body and body.financial_year_end:
+            try:
+                fy_end = date.fromisoformat(body.financial_year_end)
+            except Exception:
+                pass
+        summary = compute_capital_gains(lots, redemptions, fy_end)
+        ltcg_exempt = round(min(max(0.0, summary.total_ltcg), LTCG_EXEMPTION_LIMIT), 2)
+        return {
+            "financial_year": summary.financial_year,
+            "transaction_count": len(summary.records),
+            "ltcg_total": summary.total_ltcg,
+            "total_ltcg": summary.total_ltcg,
+            "stcg_total": summary.total_stcg,
+            "total_stcg": summary.total_stcg,
+            "ltcg_exempt": ltcg_exempt,
+            "ltcg_taxable": summary.ltcg_after_exemption,
+            "ltcg_after_exemption": summary.ltcg_after_exemption,
+            "tax_due": summary.estimated_tax_with_cess,
+            "estimated_total_tax_with_cess": summary.estimated_tax_with_cess,
+            "estimated_stcg_tax": summary.estimated_stcg_tax,
+            "estimated_ltcg_tax": summary.estimated_ltcg_tax,
+            "warnings": summary.warnings,
+            "csv_download": summary.csv_data,
+            "transactions": [
+                {
+                    "fund": r.scheme_name,
+                    "buy_date": r.purchase_date.isoformat(),
+                    "sell_date": r.redemption_date.isoformat(),
+                    "units": r.units,
+                    "holding_days": r.holding_days,
+                    "gain_type": r.gain_type,
+                    "gain": r.gain,
+                    "estimated_tax": r.estimated_tax,
+                    "grandfathered": r.grandfathered,
+                }
+                for r in summary.records
+            ],
+            "lines": [
+                {
+                    "scheme_name": r.scheme_name,
+                    "units_sold": round(r.units, 4),
+                    "buy_date": r.purchase_date.isoformat(),
+                    "sell_date": r.redemption_date.isoformat(),
+                    "buy_nav": round(r.cost_basis / r.units, 2) if r.units > 0 else 0.0,
+                    "sell_nav": round(r.proceeds / r.units, 2) if r.units > 0 else 0.0,
+                    "gain_type": r.gain_type,
+                    "gain_amount": round(r.gain, 2),
+                }
+                for r in summary.records
+            ],
+        }
+
+    fy_end = None
+    if body and body.financial_year_end:
+        try:
+            fy_end = date.fromisoformat(body.financial_year_end)
+        except Exception:
+            pass
+    return _generate_tax_pack_for_user(user["user_id"], fy_end)
+
+
+@router.get("/tax-pack", summary="1-click capital gains tax pack for current user")
+def get_user_tax_pack(
+    format: Optional[str] = Query(None, description="Set to 'csv' to download as CSV"),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Returns the tax pack for the current user's portfolio holdings.
+    If format=csv, returns a downloadable CSV file attachment.
+    """
+    res = _generate_tax_pack_for_user(user["user_id"])
+    if format == "csv":
+        return Response(
+            content=res["csv_download"],
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="ITR_Tax_Pack_{res["financial_year"]}.csv"'},
         )
-        for l in body.purchase_lots
-    ]
-    redemptions = [
-        RedemptionTransaction(
-            scheme_code=r.scheme_code,
-            scheme_name=r.scheme_name,
-            redemption_date=date.fromisoformat(r.redemption_date),
-            units_redeemed=r.units_redeemed,
-            redemption_nav=r.redemption_nav,
-            redemption_amount=r.redemption_amount,
-        )
-        for r in body.redemptions
-    ]
-    fy_end = date.fromisoformat(body.financial_year_end) if body.financial_year_end else None
-    summary = compute_capital_gains(lots, redemptions, fy_end)
-    return {
-        "financial_year": summary.financial_year,
-        "transaction_count": len(summary.records),
-        "total_stcg": summary.total_stcg,
-        "total_ltcg": summary.total_ltcg,
-        "ltcg_after_exemption": summary.ltcg_after_exemption,
-        "estimated_stcg_tax": summary.estimated_stcg_tax,
-        "estimated_ltcg_tax": summary.estimated_ltcg_tax,
-        "estimated_total_tax_with_cess": summary.estimated_tax_with_cess,
-        "warnings": summary.warnings,
-        "csv_download": summary.csv_data,
-        "transactions": [
-            {
-                "fund": r.scheme_name,
-                "buy_date": r.purchase_date.isoformat(),
-                "sell_date": r.redemption_date.isoformat(),
-                "units": r.units,
-                "holding_days": r.holding_days,
-                "gain_type": r.gain_type,
-                "gain": r.gain,
-                "estimated_tax": r.estimated_tax,
-                "grandfathered": r.grandfathered,
-            }
-            for r in summary.records
-        ],
-    }
+    return res
 
 
 # ─────────────────────────────────────────────────────────────────────────────

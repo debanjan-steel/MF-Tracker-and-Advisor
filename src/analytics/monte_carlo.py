@@ -248,3 +248,4 @@ def run_monte_carlo_nav_forecast(
         dates=dates_list,
         fan_series=fan_series,
     )
+

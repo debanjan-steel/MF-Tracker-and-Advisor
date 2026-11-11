@@ -75,3 +75,9 @@ export const useAuthStore = create<AuthState>()(
   )
 )
 
+if (typeof window !== 'undefined') {
+  window.addEventListener('mf-auth-unauthorized', () => {
+    useAuthStore.getState().logout()
+  })
+}
+

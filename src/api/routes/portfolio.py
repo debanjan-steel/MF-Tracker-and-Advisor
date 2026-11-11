@@ -147,6 +147,18 @@ async def upload_cas(
                     "valuation": val,
                     "transactions_count": len(s.transactions),
                 })
+
+            if holdings:
+                try:
+                    conn.execute(
+                        "UPDATE user_alerts SET is_dismissed = 1 WHERE user_id = ? AND alert_type = 'portfolio_empty'",
+                        (user["user_id"],),
+                    )
+                    conn.commit()
+                    from src.api.routes.alerts import evaluate_and_generate_alerts
+                    evaluate_and_generate_alerts(user["user_id"])
+                except Exception:
+                    pass
         finally:
             conn.close()
 
@@ -294,12 +306,17 @@ def add_holding(holding: HoldingInput, user: dict = Depends(get_current_user)):
     conn = _get_portfolio_db()
     try:
         cur = conn.execute(
-            "SELECT id, units, avg_nav, invested_amount FROM user_holdings WHERE user_id = ? AND scheme_code = ?",
-            (user_id, scheme_code),
+            """
+            SELECT id, units, avg_nav, invested_amount, scheme_name 
+            FROM user_holdings 
+            WHERE user_id = ? AND (scheme_code = ? OR LOWER(TRIM(scheme_name)) = LOWER(TRIM(?)))
+            """,
+            (user_id, scheme_code, holding.scheme_name),
         )
         existing = cur.fetchone()
         if existing:
-            # Automatic Accumulation into existing fund holding
+            # Automatic Accumulation into existing fund holding:
+            # Adds the new auto-calculated units & value directly to the existing holding
             old_units = float(existing["units"])
             old_invested = float(existing["invested_amount"])
             tot_units = old_units + units
@@ -309,10 +326,10 @@ def add_holding(holding: HoldingInput, user: dict = Depends(get_current_user)):
             conn.execute(
                 """
                 UPDATE user_holdings
-                SET units = ?, avg_nav = ?, invested_amount = ?, updated_at = datetime('now')
+                SET units = ?, avg_nav = ?, invested_amount = ?, scheme_code = ?, updated_at = datetime('now')
                 WHERE id = ?
                 """,
-                (tot_units, new_avg, tot_invested, existing["id"]),
+                (tot_units, new_avg, tot_invested, scheme_code, existing["id"]),
             )
             conn.commit()
             action = "accumulated"
@@ -340,11 +357,29 @@ def add_holding(holding: HoldingInput, user: dict = Depends(get_current_user)):
             final_invested = invested
             final_avg = avg_nav
 
-        new_current_val = final_units * latest_nav
+        added_current_val = round(units * latest_nav, 2)
+        new_current_val = round(final_units * latest_nav, 2)
+
+        # Immediately dismiss any 'portfolio_empty' onboarding notice and generate portfolio alerts
+        try:
+            conn.execute(
+                "UPDATE user_alerts SET is_dismissed = 1 WHERE user_id = ? AND alert_type = 'portfolio_empty'",
+                (user_id,),
+            )
+            conn.commit()
+            from src.api.routes.alerts import evaluate_and_generate_alerts
+            evaluate_and_generate_alerts(user_id)
+        except Exception as e:
+            logger.warning(f"Failed to auto-evaluate alerts on holding update: {e}")
+
         return {
             "success": True,
             "action": action,
-            "message": f"Fund {action} successfully.",
+            "message": (
+                f"Investment merged! Added auto-calculated value: ₹{added_current_val:,.2f} ({round(units, 3)} units). Updated total holding value: ₹{new_current_val:,.2f}."
+                if action == "accumulated"
+                else "Fund added to portfolio successfully!"
+            ),
             "holding": {
                 "scheme_code": scheme_code,
                 "scheme_name": holding.scheme_name,
@@ -352,8 +387,10 @@ def add_holding(holding: HoldingInput, user: dict = Depends(get_current_user)):
                 "avg_nav": round(final_avg, 2),
                 "invested": round(final_invested, 2),
                 "current_nav": round(latest_nav, 2),
-                "current_value": round(new_current_val, 2),
+                "current_value": new_current_val,
                 "gain_loss": round(new_current_val - final_invested, 2),
+                "added_value": added_current_val,
+                "added_units": round(units, 4),
             },
         }
     finally:
@@ -372,9 +409,21 @@ def delete_holding(scheme_code: int, user: dict = Depends(get_current_user)):
             "DELETE FROM user_holdings WHERE user_id = ? AND scheme_code = ?",
             (user_id, scheme_code),
         )
-        conn.commit()
         if cur.rowcount == 0:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holding not found.")
+
+        # Also dismiss alerts associated with this deleted scheme_code and refresh alerts
+        try:
+            conn.execute(
+                "UPDATE user_alerts SET is_dismissed = 1 WHERE user_id = ? AND scheme_code = ?",
+                (user_id, scheme_code),
+            )
+            conn.commit()
+            from src.api.routes.alerts import evaluate_and_generate_alerts
+            evaluate_and_generate_alerts(user_id)
+        except Exception:
+            pass
+
         return {"success": True, "message": f"Fund {scheme_code} removed from portfolio."}
     finally:
         conn.close()
